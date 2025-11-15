@@ -137,7 +137,6 @@ export async function GET(request: NextRequest) {
     return response
   } catch (error) {
     console.error('Google OAuth callback error:', error)
-    const baseUrl = request.nextUrl.origin
     return NextResponse.redirect(
       `${baseUrl}/?error=${encodeURIComponent('An error occurred during authentication.')}&login=1`
     )
