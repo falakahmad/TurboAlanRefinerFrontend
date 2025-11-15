@@ -231,7 +231,11 @@ export class RefinerClient {
                 try {
                   const backend = process.env.NEXT_PUBLIC_REFINER_BACKEND_WS_URL || (this.baseUrl ? this.baseUrl : "")
                   if (backend) {
-                    const wsBase = backend.replace(/^http/, "ws").replace(/\/$/, "")
+                    // Convert http:// to ws:// and https:// to wss://
+                    const wsBase = backend
+                      .replace(/^https:\/\//, "wss://")
+                      .replace(/^http:\/\//, "ws://")
+                      .replace(/\/$/, "")
                     const wsUrl = `${wsBase}/ws/progress/${jobId}`
                     
                     // Small delay to ensure backend is ready
