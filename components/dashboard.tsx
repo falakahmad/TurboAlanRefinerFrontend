@@ -158,9 +158,10 @@ export default function Dashboard() {
             <h1 className="text-3xl font-light text-foreground mb-2">Turbo Alan Refiner</h1>
             <p className="text-muted-foreground text-sm">Multi-pass text refinement with AI detection reduction</p>
           </div>
-          <div className="mb-6">
+          {/* Temporarily commented out until fixed */}
+          {/* <div className="mb-6">
             <UsageSummary />
-          </div>
+          </div> */}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-6 bg-muted">
