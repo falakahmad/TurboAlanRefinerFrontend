@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET
-const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_ORIGIN || 'http://localhost:3000'
-const REDIRECT_URI = `${APP_ORIGIN}/api/auth/google/callback`
 
 export async function GET(request: NextRequest) {
   if (!GOOGLE_CLIENT_ID) {
@@ -12,6 +10,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
+
+  // Use request origin dynamically to support both localhost and production
+  const origin = request.nextUrl.origin
+  const REDIRECT_URI = `${origin}/api/auth/google/callback`
 
   const { searchParams } = new URL(request.url)
   const state = searchParams.get('state') || Math.random().toString(36).substring(7)

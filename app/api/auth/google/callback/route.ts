@@ -2,17 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET
-const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_ORIGIN || 'http://localhost:3000'
-const REDIRECT_URI = `${APP_ORIGIN}/api/auth/google/callback`
 
 export async function GET(request: NextRequest) {
+  // Use request origin dynamically to support both localhost and production
+  const origin = request.nextUrl.origin
+  const REDIRECT_URI = `${origin}/api/auth/google/callback`
+  const baseUrl = origin
+
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const state = searchParams.get('state')
   const error = searchParams.get('error')
-
-  // Get base URL for absolute redirects
-  const baseUrl = request.nextUrl.origin
 
   // Check for OAuth errors
   if (error) {
