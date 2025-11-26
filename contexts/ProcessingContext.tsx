@@ -20,25 +20,21 @@ export function ProcessingProvider({ children }: { children: ReactNode }) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
 
+  // Clear legacy localStorage state on mount to prevent 404s on Vercel
+  useEffect(() => {
+    try {
+      localStorage.removeItem('refiner-processing-events')
+      localStorage.removeItem('refiner-processing-state')
+    } catch (e) {
+      // Ignore errors
+    }
+  }, [])
+
+  // Removed persistence logic to ensure fresh state on reload
+  /*
   // Load processing state from localStorage on mount
   useEffect(() => {
-    const savedEvents = localStorage.getItem('refiner-processing-events')
-    if (savedEvents) {
-      try {
-        const parsedEvents = JSON.parse(savedEvents)
-        setProcessingEvents(parsedEvents)
-      } catch (error) {
-        
-      }
-    }
-    try {
-      const savedState = localStorage.getItem('refiner-processing-state')
-      if (savedState) {
-        const st = JSON.parse(savedState)
-        if (typeof st.isProcessing === 'boolean') setIsProcessing(st.isProcessing)
-        if (st.currentJobId) setCurrentJobId(st.currentJobId)
-      }
-    } catch {}
+    // ...
   }, [])
 
   // Save processing events to localStorage whenever they change
@@ -50,6 +46,7 @@ export function ProcessingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     localStorage.setItem('refiner-processing-state', JSON.stringify({ isProcessing, currentJobId }))
   }, [isProcessing, currentJobId])
+  */
 
   const addProcessingEvent = (event: ProcessingEvent) => {
     setProcessingEvents(prev => [...prev, event])
