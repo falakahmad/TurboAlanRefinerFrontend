@@ -12,6 +12,7 @@ import { useProcessing } from "@/contexts/ProcessingContext"
 import { useSchema } from "@/contexts/SchemaContext"
 import FileBrowser from "./file-browser"
 import DownloadModal from "./download-modal"
+import ResumeModal from "./resume-modal"
 import { Download } from "lucide-react"
 import { formatFilePath } from "@/lib/path-utils"
 
@@ -231,6 +232,244 @@ export default function ProcessingControls() {
     
   }, [isProcessing])
 
+  const [resumeState, setResumeState] = useState<{
+    open: boolean
+    fileId: string
+    fileName: string
+    lastPass: number
+    textContent: string
+  }>({
+    open: false,
+    fileId: "",
+    fileName: "",
+    lastPass: 0,
+    textContent: "",
+  })
+
+  const handleResume = async () => {
+    if (!resumeState.fileId || !resumeState.textContent) return
+
+    setIsProcessing(true)
+    
+    // Construct files array for resume - using text content from last pass
+    const files = [{
+      id: resumeState.fileId,
+      name: resumeState.fileName,
+      type: "local" as const,
+      textContent: resumeState.textContent // Pass the text content directly
+    }]
+
+    try {
+      await refinerClient.startRefinement(
+        {
+          files,
+          output: { type: 'local', dir: './output' },
+          passes: settings.passes - resumeState.lastPass, // Remaining passes
+          startPass: resumeState.lastPass + 1, // Start from next pass
+          earlyStop: settings.earlyStop,
+          aggressiveness: settings.aggressiveness,
+          scannerRisk: settings.scannerRisk,
+          keywords: settings.keywords.split(",").map((k) => k.trim()).filter(Boolean),
+          strategy_mode: settings.strategyMode,
+          formatting_safeguards: { 
+            enabled: (schemaLevels.find(s => s.id === 'formatting_safeguards')?.value || 3) > 0, 
+            mode: (schemaLevels.find(s => s.id === 'formatting_safeguards')?.value || 3) >= 3 ? 'strict' : 'smart' 
+          },
+          history_analysis: { 
+            enabled: (schemaLevels.find(s => s.id === 'history_analysis')?.value || 1) > 0
+          },
+          refiner_dry_run: settings.dryRun,
+          annotation_mode: { 
+            enabled: (schemaLevels.find(s => s.id === 'annotation_mode')?.value || 0) > 0, 
+            mode: (schemaLevels.find(s => s.id === 'annotation_mode')?.value || 0) === 1 ? 'inline' : 'sidecar',
+            verbosity: (schemaLevels.find(s => s.id === 'annotation_mode')?.value || 0) === 1 ? 'low' : 
+                      (schemaLevels.find(s => s.id === 'annotation_mode')?.value || 0) === 2 ? 'medium' : 'high'
+          },
+          heuristics: {
+            microstructure_control: (schemaLevels.find(s => s.id === 'microstructure_control')?.value || 2) > 0,
+            macrostructure_analysis: (schemaLevels.find(s => s.id === 'macrostructure_analysis')?.value || 1) > 0,
+            anti_scanner_techniques: (schemaLevels.find(s => s.id === 'anti_scanner_techniques')?.value || 3) > 0,
+            refiner_control: schemaLevels.find(s => s.id === 'refiner_control')?.value || 2,
+            entropy_management: schemaLevels.find(s => s.id === 'entropy_management')?.value || 2,
+            semantic_tone_tuning: schemaLevels.find(s => s.id === 'semantic_tone_tuning')?.value || 1,
+            history_analysis: (schemaLevels.find(s => s.id === 'history_analysis')?.value || 1) > 0,
+            annotation_mode: (schemaLevels.find(s => s.id === 'annotation_mode')?.value || 0) > 0,
+            humanize_academic: {
+              enabled: (schemaLevels.find(s => s.id === 'humanize_academic')?.value || 2) > 0,
+              intensity: (schemaLevels.find(s => s.id === 'humanize_academic')?.value || 2) === 1 ? 'light' : 
+                        (schemaLevels.find(s => s.id === 'humanize_academic')?.value || 2) === 2 ? 'medium' : 'strong',
+            },
+            formatting_safeguards: {
+              enabled: (schemaLevels.find(s => s.id === 'formatting_safeguards')?.value || 3) > 0,
+              mode: (schemaLevels.find(s => s.id === 'formatting_safeguards')?.value || 3) >= 3 ? 'strict' : 'smart',
+            },
+            keywords: settings.keywords.split(",").map((k) => k.trim()).filter(Boolean),
+            strategy_weights: {
+              clarity: Math.min(1.0, 0.3 + ((schemaLevels.find(s => s.id === 'semantic_tone_tuning')?.value || 1) * 0.2)),
+              persuasion: Math.min(1.0, 0.2 + ((schemaLevels.find(s => s.id === 'anti_scanner_techniques')?.value || 3) * 0.15)),
+              brevity: Math.min(1.0, 0.2 + ((schemaLevels.find(s => s.id === 'microstructure_control')?.value || 2) * 0.1)),
+              formality: Math.min(1.0, 0.4 + ((schemaLevels.find(s => s.id === 'humanize_academic')?.value || 2) * 0.1)),
+            },
+            entropy: {
+              risk_preference: Math.min(1.0, 0.3 + ((schemaLevels.find(s => s.id === 'entropy_management')?.value || 2) * 0.2)),
+              repeat_penalty: Math.min(1.0, (schemaLevels.find(s => s.id === 'anti_scanner_techniques')?.value || 3) * 0.3),
+              phrase_penalty: Math.min(1.0, (schemaLevels.find(s => s.id === 'anti_scanner_techniques')?.value || 3) * 0.2),
+            },
+          },
+          schemaLevels: {
+            microstructure_control: schemaLevels.find(s => s.id === 'microstructure_control')?.value || 2,
+            macrostructure_analysis: schemaLevels.find(s => s.id === 'macrostructure_analysis')?.value || 1,
+            anti_scanner_techniques: schemaLevels.find(s => s.id === 'anti_scanner_techniques')?.value || 3,
+            entropy_management: schemaLevels.find(s => s.id === 'entropy_management')?.value || 2,
+            semantic_tone_tuning: schemaLevels.find(s => s.id === 'semantic_tone_tuning')?.value || 1,
+            formatting_safeguards: schemaLevels.find(s => s.id === 'formatting_safeguards')?.value || 3,
+            refiner_control: schemaLevels.find(s => s.id === 'refiner_control')?.value || 2,
+            history_analysis: schemaLevels.find(s => s.id === 'history_analysis')?.value || 1,
+            annotation_mode: schemaLevels.find(s => s.id === 'annotation_mode')?.value || 0,
+            humanize_academic: schemaLevels.find(s => s.id === 'humanize_academic')?.value || 2,
+          },
+        },
+        (event: ProcessingEvent) => {
+          // Re-use the same event handler logic
+          const eventType = (event as any).type || event.type
+          if (eventType === "complete" || eventType === "stream_end" || eventType === "done") {
+            if (processingTimeoutRef.current) {
+              clearTimeout(processingTimeoutRef.current)
+              processingTimeoutRef.current = null
+            }
+            if (stuckCheckTimeoutRef.current) {
+              clearTimeout(stuckCheckTimeoutRef.current)
+              stuckCheckTimeoutRef.current = null
+            }
+            try { addProcessingEvent(event) } catch {}
+            setIsProcessing(false)
+            setPassProgress(new Map())
+            window.dispatchEvent(new CustomEvent("refiner-processing-complete", { detail: event }))
+            return
+          }
+          
+          if (event.type === "error") {
+            // On error during resume, show alert but don't loop resume modal infinitely unless useful
+            if (processingTimeoutRef.current) {
+              clearTimeout(processingTimeoutRef.current)
+              processingTimeoutRef.current = null
+            }
+            if (stuckCheckTimeoutRef.current) {
+              clearTimeout(stuckCheckTimeoutRef.current)
+              stuckCheckTimeoutRef.current = null
+            }
+            try { addProcessingEvent(event) } catch {}
+            alert(`Resume failed: ${event.error || event.message || "Unknown error"}`)
+            setIsProcessing(false)
+            setPassProgress(new Map())
+            return
+          }
+          
+          if (!event.fileName && event.fileId) {
+            event.fileName = resumeState.fileName
+          }
+          if (event.type === 'pass_complete') {
+            if (!event.outputPath && (event as any).metrics?.localPath) {
+              try { (event as any).outputPath = (event as any).metrics.localPath } catch {}
+            }
+          }
+          addProcessingEvent(event)
+          
+          const ev = event as any
+          if (ev.type === "pass_start") {
+             setPassProgress(prev => {
+              const newMap = new Map(prev)
+              // Initialize passes if needed (merging with existing progress)
+              newMap.set(ev.pass, { pass: ev.pass, status: "running", currentStage: "starting" })
+              window.dispatchEvent(new CustomEvent("refiner-pass-progress", { 
+                detail: { passProgress: Array.from(newMap.values()), totalPasses: settings.passes }
+              }))
+              return newMap
+            })
+          }
+          
+          if (ev.type === "stage_update" && ev.pass) {
+            setPassProgress(prev => {
+              const newMap = new Map(prev)
+              const current = newMap.get(ev.pass) || { pass: ev.pass, status: "running" as const }
+              current.currentStage = ev.stage
+              current.status = "running"
+              newMap.set(ev.pass, current)
+              window.dispatchEvent(new CustomEvent("refiner-pass-progress", { 
+                detail: { passProgress: Array.from(newMap.values()), totalPasses: settings.passes }
+              }))
+              return newMap
+            })
+          }
+          
+          if (ev.type === "pass_complete" && ev.pass) {
+            setPassProgress(prev => {
+              const newMap = new Map(prev)
+              const current = newMap.get(ev.pass) || { pass: ev.pass, status: "completed" as const }
+              current.status = "completed"
+              current.inputChars = ev.inputChars
+              current.outputChars = ev.outputChars
+              newMap.set(ev.pass, current)
+              window.dispatchEvent(new CustomEvent("refiner-pass-progress", { 
+                detail: { passProgress: Array.from(newMap.values()), totalPasses: settings.passes }
+              }))
+              return newMap
+            })
+            
+            // Update completed files tracking
+            if (ev.fileId && ev.pass && (ev.outputPath || ev.metrics?.localPath)) {
+              const filePath = ev.outputPath || ev.metrics?.localPath
+              setCompletedFiles(prev => {
+                const existing = prev.find(f => f.fileId === ev.fileId)
+                if (existing) {
+                  if (!existing.passes.find(p => p.passNumber === ev.pass)) {
+                    existing.passes.push({
+                      passNumber: ev.pass,
+                      path: filePath,
+                      size: ev.outputChars,
+                      cost: ev.cost
+                    })
+                    existing.passes.sort((a, b) => a.passNumber - b.passNumber)
+                  }
+                  return [...prev]
+                } else {
+                  return [...prev, {
+                    fileId: ev.fileId,
+                    fileName: ev.fileName || `File ${ev.fileId}`,
+                    passes: [{
+                      passNumber: ev.pass,
+                      path: filePath,
+                      size: ev.outputChars,
+                      cost: ev.cost
+                    }]
+                  }]
+                }
+              })
+            }
+          }
+          
+          if (ev.type === "progress" && ev.pass) {
+            setPassProgress(prev => {
+              const newMap = new Map(prev)
+              const current = newMap.get(ev.pass) || { pass: ev.pass, status: "running" as const }
+              if (ev.inputSize) current.inputChars = ev.inputSize
+              if (ev.outputSize) current.outputChars = ev.outputSize
+              newMap.set(ev.pass, current)
+              window.dispatchEvent(new CustomEvent("refiner-pass-progress", { 
+                detail: { passProgress: Array.from(newMap.values()), totalPasses: settings.passes }
+              }))
+              return newMap
+            })
+          }
+        }
+      )
+    } catch (error) {
+      console.error("Resume failed:", error)
+      alert(`Resume failed: ${error instanceof Error ? error.message : "Unknown error"}`)
+      setIsProcessing(false)
+    }
+  }
+
   const handleStartProcessing = async () => {
     // Check if we have a selected input path or uploaded files
     if (!selectedInputPath && getUploadedFiles().length === 0) {
@@ -241,12 +480,9 @@ export default function ProcessingControls() {
     setIsProcessing(true)
     setTotalJobCost(0)
     setCurrentPassCost(0)
-    // Don't clear previous events - preserve processing history
-    // clearProcessingEvents() // REMOVED: This was causing loss of previous processing data
     
     // Set a timeout fallback to prevent infinite processing state
     processingTimeoutRef.current = setTimeout(() => {
-      
       setIsProcessing(false)
       setPassProgress(new Map())
       window.dispatchEvent(new CustomEvent("refiner-processing-complete", { detail: { type: "timeout" } }))
@@ -256,13 +492,11 @@ export default function ProcessingControls() {
     stuckCheckTimeoutRef.current = setTimeout(() => {
       // Check current state using ref
       if (isProcessingRef.current) {
-        
         // Try to get job status to see if it's actually complete
         if (processingEventsRef.current.length > 0) {
           const lastEvent = processingEventsRef.current[processingEventsRef.current.length - 1]
           
           if (lastEvent && (lastEvent.type === "stream_end" || lastEvent.type === "complete")) {
-            
             setIsProcessing(false)
             setPassProgress(new Map())
             window.dispatchEvent(new CustomEvent("refiner-processing-complete", { detail: lastEvent }))
@@ -270,12 +504,9 @@ export default function ProcessingControls() {
             // Check if we have pass_complete events but no stream_end
             const passCompleteEvents = processingEventsRef.current.filter(e => e.type === "pass_complete")
             if (passCompleteEvents.length > 0) {
-              
               // If we have pass_complete events and it's been a while, assume completion
               const lastPassEvent = passCompleteEvents[passCompleteEvents.length - 1]
-              
               if (lastPassEvent && lastPassEvent.pass && lastPassEvent.pass >= 3) {
-                
                 setIsProcessing(false)
                 setPassProgress(new Map())
                 window.dispatchEvent(new CustomEvent("refiner-processing-complete", { detail: { type: "assumed_complete", lastPass: lastPassEvent } }))
@@ -287,8 +518,6 @@ export default function ProcessingControls() {
     }, 2 * 60 * 1000) // 2 minutes check
 
     try {
-      
-      
       // Use selected input path if available, otherwise fall back to uploaded files
           const files = selectedInputPath 
         ? [{ id: "selected_file", name: "Selected File", type: "local" as const, source: selectedInputPath }]
@@ -443,7 +672,25 @@ export default function ProcessingControls() {
             }
             // Record error event in history so UI can react
             try { addProcessingEvent(event) } catch {}
-            alert(`Processing failed: ${event.error || event.message || "Unknown error"}`)
+            
+            // Check if we can resume (if we have completed passes)
+            const completedPasses = processingEventsRef.current
+              .filter(e => e.type === 'pass_complete' && (e as any).textContent)
+              .sort((a, b) => (b.pass || 0) - (a.pass || 0))
+            
+            if (completedPasses.length > 0) {
+              const lastPass = completedPasses[0]
+              setResumeState({
+                open: true,
+                fileId: lastPass.fileId || "",
+                fileName: lastPass.fileName || "",
+                lastPass: lastPass.pass || 0,
+                textContent: (lastPass as any).textContent || ""
+              })
+            } else {
+              alert(`Processing failed: ${event.error || event.message || "Unknown error"}`)
+            }
+            
             setIsProcessing(false)
             setPassProgress(new Map()) // Clear progress on error
             return // Exit early to avoid duplicate processing
@@ -597,7 +844,25 @@ export default function ProcessingControls() {
         clearTimeout(stuckCheckTimeoutRef.current)
         stuckCheckTimeoutRef.current = null
       }
-      alert(`Processing failed: ${error instanceof Error ? error.message : "Unknown error"}`)
+      
+      // Check if we can resume (if we have completed passes)
+      const completedPasses = processingEventsRef.current
+        .filter(e => e.type === 'pass_complete' && (e as any).textContent)
+        .sort((a, b) => (b.pass || 0) - (a.pass || 0))
+      
+      if (completedPasses.length > 0) {
+        const lastPass = completedPasses[0]
+        setResumeState({
+          open: true,
+          fileId: lastPass.fileId || "",
+          fileName: lastPass.fileName || "",
+          lastPass: lastPass.pass || 0,
+          textContent: (lastPass as any).textContent || ""
+        })
+      } else {
+        alert(`Processing failed: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+      
       setIsProcessing(false)
     }
   }
@@ -608,6 +873,14 @@ export default function ProcessingControls() {
       <FileBrowser
         onFileSelect={setSelectedInputPath}
         selectedInputPath={selectedInputPath}
+      />
+
+      <ResumeModal
+        open={resumeState.open}
+        onOpenChange={(open) => setResumeState(prev => ({ ...prev, open }))}
+        onResume={handleResume}
+        lastPass={resumeState.lastPass}
+        fileName={resumeState.fileName}
       />
 
       {/* Processing Controls */}

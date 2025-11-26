@@ -5,6 +5,7 @@ export interface RefineRequest {
     type: "local" | "drive"
     source?: string
     driveId?: string
+    textContent?: string // Added for resume capability
   }>
   output: {
     type: "local" | "drive"
@@ -12,6 +13,7 @@ export interface RefineRequest {
     folderId?: string
   }
   passes: number
+  startPass?: number // Added for resume capability
   earlyStop: boolean
   aggressiveness: string
   scannerRisk?: number
