@@ -24,6 +24,7 @@ interface ProcessedFile {
     fileName: string
     path: string
     driveId?: string
+    textContent?: string
   }>
   processingTime: number
   finalMetrics: {
@@ -80,6 +81,7 @@ export default function ResultsViewer() {
                     passNumber: event.pass,
                     fileName: `${event.fileName}_pass${event.pass}.txt`,
                     path: event.outputPath || (event as any).metrics?.localPath,
+                    textContent: (event as any).textContent
                   })
                 }
                 // Update metrics from pass completion
@@ -284,7 +286,7 @@ export default function ResultsViewer() {
     }
   }
 
-  const downloadFile = async (path: string, fileName: string, driveId?: string) => {
+  const downloadFile = async (path: string, fileName: string, driveId?: string, textContent?: string) => {
     try {
       if (driveId) {
         // Download from Google Drive
@@ -294,8 +296,23 @@ export default function ResultsViewer() {
         } else {
           throw new Error('No download URL available')
         }
+      } else if (textContent) {
+        // Client-side download for text content (Vercel compatible)
+        const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' })
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName || 'download.txt'
+        a.style.display = 'none'
+        document.body.appendChild(a)
+        a.click()
+        setTimeout(() => {
+          window.URL.revokeObjectURL(url)
+          document.body.removeChild(a)
+        }, 100)
       } else {
         // Download local file (via Next API route)
+        // ... (rest of the existing logic)
         const response = await fetch(`/api/files/download?path=${encodeURIComponent(path)}`)
         if (response.ok) {
           // Get content type and filename from response headers
@@ -346,6 +363,10 @@ export default function ResultsViewer() {
           }, 100)
         } else {
           const errorText = await response.text()
+          // Check for Vercel ephemeral storage error
+          if (response.status === 404 && (errorText.includes("FILE_NOT_FOUND") || errorText.includes("File not found"))) {
+             throw new Error("File not found on server. This is expected on Vercel deployments due to ephemeral storage. Please use Google Drive output or copy the text from the Diff Viewer.")
+          }
           throw new Error(`Download failed: ${response.statusText} - ${errorText}`)
         }
       }
@@ -553,10 +574,10 @@ export default function ResultsViewer() {
                                   const downloadable = Boolean(output.path) || Boolean(output.driveId)
                                   return (
                                     <Button
-                                  size="sm"
-                                      onClick={() => downloadable && downloadFile(output.path, output.fileName, output.driveId)}
-                                      disabled={!downloadable}
-                                      className={`shadow-sm ${downloadable ? 'bg-yellow-400 text-black hover:bg-yellow-500' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
+                                      size="sm"
+                                      onClick={() => downloadable && downloadFile(output.path, output.fileName, output.driveId, output.textContent)}
+                                      disabled={!downloadable && !output.textContent}
+                                      className={`shadow-sm ${downloadable || output.textContent ? 'bg-yellow-400 text-black hover:bg-yellow-500' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
                                     >
                                       <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path
