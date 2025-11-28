@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/contexts/AuthContext"
 import { useLoading } from "@/contexts/LoadingContext"
+import { useToast } from "@/hooks/use-toast"
 
 interface SignupModalProps {
   isOpen: boolean
@@ -31,6 +32,7 @@ interface SignupFormData {
 export default function SignupModal({ isOpen, onClose, onSignupSuccess, onSwitchToSignin }: SignupModalProps) {
   const { signin } = useAuth()
   const { startLoading, stopLoading } = useLoading()
+  const { toast } = useToast()
   const [formData, setFormData] = useState<SignupFormData>({
     firstName: "",
     lastName: "",
@@ -149,10 +151,20 @@ export default function SignupModal({ isOpen, onClose, onSignupSuccess, onSwitch
       }
 
       stopLoading()
+      toast({
+        title: "Account created!",
+        description: `Welcome, ${formData.firstName}! Your account has been created successfully.`,
+      })
       onSignupSuccess()
     } catch (err) {
       stopLoading()
-      setError(err instanceof Error ? err.message : "Signup failed. Please try again.")
+      const errorMsg = err instanceof Error ? err.message : "Signup failed. Please try again."
+      setError(errorMsg)
+      toast({
+        title: "Signup failed",
+        description: errorMsg,
+        variant: "destructive"
+      })
     } finally {
       setIsLoading(false)
     }
@@ -165,6 +177,11 @@ export default function SignupModal({ isOpen, onClose, onSignupSuccess, onSwitch
     const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
     if (!googleClientId) {
       setError("Google OAuth is not configured. Please contact support.")
+      toast({
+        title: "Google OAuth unavailable",
+        description: "Google OAuth is not configured. Please contact support.",
+        variant: "destructive"
+      })
       return
     }
     

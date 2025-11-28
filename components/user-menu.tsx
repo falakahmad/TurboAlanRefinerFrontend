@@ -1,15 +1,17 @@
 "use client"
 
-import { useEffect, useMemo, useState, useCallback } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import Image from "next/image"
 import { refinerClient } from "@/lib/refiner-client"
 import { useAuth } from "@/contexts/AuthContext"
+import { useToast } from "@/hooks/use-toast"
 
 export default function UserMenu() {
   const { user: authUser, isAuthenticated, signout } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
+  const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const [analytics, setAnalytics] = useState<any | null>(null)
   const [loading, setLoading] = useState(false)
@@ -71,8 +73,8 @@ export default function UserMenu() {
         className="rounded-full overflow-hidden w-9 h-9 border border-border"
         onClick={() => setOpen(v => !v)}
       >
-        {authUser.avatarUrl ? (
-          <Image src={authUser.avatarUrl} alt="avatar" width={36} height={36} />
+        {(authUser as any).avatarUrl ? (
+          <Image src={(authUser as any).avatarUrl} alt="avatar" width={36} height={36} />
         ) : (
           <div className="w-full h-full bg-muted flex items-center justify-center text-xs text-foreground">
             {(authUser.firstName?.[0] || authUser.email?.[0] || "U").toUpperCase()}
@@ -83,8 +85,8 @@ export default function UserMenu() {
         <div className="absolute right-0 mt-2 w-80 bg-popover border border-border rounded-md shadow-xl z-50 p-3 space-y-3">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full overflow-hidden border border-border">
-              {authUser.avatarUrl ? (
-                <Image src={authUser.avatarUrl} alt="avatar" width={48} height={48} />
+              {(authUser as any).avatarUrl ? (
+                <Image src={(authUser as any).avatarUrl} alt="avatar" width={48} height={48} />
               ) : (
                 <div className="w-full h-full bg-muted flex items-center justify-center text-sm text-foreground">
                   {(authUser.firstName?.[0] || authUser.email?.[0] || "U").toUpperCase()}
@@ -173,6 +175,10 @@ export default function UserMenu() {
                 className="text-xs px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors font-medium"
                 onClick={async () => {
                   await signout()
+                  toast({
+                    title: "Signed out",
+                    description: "You have been signed out successfully",
+                  })
                   window.location.href = '/'
                 }}
               >

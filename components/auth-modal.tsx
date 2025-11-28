@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import SignupModal from "./signup-modal"
 import { useAuth } from "@/contexts/AuthContext"
 import { useLoading } from "@/contexts/LoadingContext"
+import { supabase } from "@/lib/supabase"
+import { useToast } from "@/hooks/use-toast"
 
 interface AuthModalProps {
   isOpen: boolean
@@ -19,6 +21,7 @@ interface AuthModalProps {
 export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModalProps) {
   const { signin } = useAuth()
   const { startLoading, stopLoading } = useLoading()
+  const { toast } = useToast()
   const [settings, setSettings] = useState({
     openaiApiKey: "",
     openaiModel: "gpt-4.1",
@@ -32,6 +35,14 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
     email: "",
     password: ""
   })
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
+  const [resetEmail, setResetEmail] = useState("")
+  const [resetSent, setResetSent] = useState(false)
+  const [resetStep, setResetStep] = useState<'email' | 'otp' | 'password'>('email')
+  const [otpCode, setOtpCode] = useState('')
+  const [tempToken, setTempToken] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
 
   // Check for OAuth errors in URL when modal opens
   useEffect(() => {
@@ -110,10 +121,20 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
       }
 
       stopLoading()
+      toast({
+        title: "Welcome back!",
+        description: `Signed in as ${signinData.email}`,
+      })
       onAuthenticated()
     } catch (err) {
       stopLoading()
-      setError(err instanceof Error ? err.message : "Sign in failed. Please try again.")
+      const errorMsg = err instanceof Error ? err.message : "Sign in failed. Please try again."
+      setError(errorMsg)
+      toast({
+        title: "Sign in failed",
+        description: errorMsg,
+        variant: "destructive"
+      })
     } finally {
       setIsLoading(false)
     }
@@ -126,6 +147,10 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
       const expires = new Date(Date.now() + 7*24*60*60*1000).toUTCString()
       document.cookie = `refiner_auth=1; Path=/; Expires=${expires}; SameSite=Lax`
     } catch {}
+    toast({
+      title: "Settings saved",
+      description: "Your settings have been saved successfully",
+    })
     onAuthenticated()
   }
 
@@ -138,6 +163,111 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
     setShowSignupModal(true)
   }
 
+  const handleForgotPassword = async () =>{
+    setError("")
+    if (!resetEmail) {
+      setError("Please enter your email")
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      console.log('Sending password reset request to:', 'http://localhost:8000/auth/request-password-reset')
+      console.log('Email:', resetEmail)
+      
+      // Call backend to request OTP
+      const response = await fetch('http://localhost:8000/auth/request-password-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail })
+      })
+
+      console.log('Response status:', response.status)
+      const data = await response.json()
+      console.log('Response data:', data)
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to send OTP')
+      }
+
+      setResetStep('otp')
+      setError('')
+    } catch (err) {
+      console.error('Password reset error:', err)
+      setError(err instanceof Error ? err.message : "Failed to send OTP. Please check the console for details.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleVerifyOTP = async () => {
+    setError("")
+    if (!otpCode || otpCode.length !== 6) {
+      setError("Please enter the 6-digit code")
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const response = await fetch('http://localhost:8000/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail, otp: otpCode })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Invalid OTP')
+      }
+
+      setTempToken(data.temp_token)
+      setResetStep('password')
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid OTP code")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleResetPassword = async () => {
+    setError("")
+    if (newPassword !== confirmNewPassword) {
+      setError("Passwords do not match")
+      return
+    }
+    if (newPassword.length < 6) {
+      setError("Password must be at least 6 characters")
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const response = await fetch('http://localhost:8000/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email: resetEmail, 
+          token: tempToken,
+          new_password: newPassword 
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to reset password')
+      }
+
+      setResetSent(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reset password")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <Card className="w-full max-w-md mx-4 bg-white border-gray-200 shadow-2xl">
@@ -145,11 +275,151 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
           <div className="w-12 h-12 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-500 flex items-center justify-center mx-auto mb-4">
             <span className="text-white font-bold text-lg">T</span>
           </div>
-          <CardTitle className="text-gray-900">Welcome to Turbo Alan Refiner</CardTitle>
-          <CardDescription className="text-gray-600">Configure your settings to get started</CardDescription>
+          <CardTitle className="text-gray-900">
+            {showForgotPassword ? "Reset Password" : "Welcome to Turbo Alan Refiner"}
+          </CardTitle>
+          <CardDescription className="text-gray-600">
+            {showForgotPassword 
+              ? resetStep === 'email' 
+                ? "Enter your email to receive a verification code"
+                : resetStep === 'otp'
+                ? "Enter the 6-digit code sent to your email"
+                : "Create a new password for your account"
+              : "Configure your settings to get started"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="auth" className="w-full">
+          {showForgotPassword ? (
+            <div className="space-y-4">
+              {resetSent ? (
+                <div className="text-center space-y-4">
+                  <div className="text-green-600 bg-green-50 p-4 rounded-md">
+                    Password reset successfully! You can now sign in with your new password.
+                  </div>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setShowForgotPassword(false)
+                      setResetSent(false)
+                      setResetStep('email')
+                      setOtpCode('')
+                      setNewPassword('')
+                      setConfirmNewPassword('')
+                    }}
+                    className="text-gray-600"
+                  >
+                    Back to Sign In
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {error && (
+                    <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+                      {error}
+                    </div>
+                  )}
+                  
+                  {resetStep === 'email' && (
+                    <>
+                      <Input
+                        type="email"
+                        placeholder="Enter your email"
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        className="border-gray-200 focus:border-yellow-400 focus:ring-yellow-400"
+                      />
+                      <Button
+                        onClick={handleForgotPassword}
+                        disabled={isLoading}
+                        className="w-full bg-gradient-to-r from-yellow-400 to-yellow-500 text-white hover:from-yellow-500 hover:to-yellow-600"
+                      >
+                        {isLoading ? "Sending..." : "Send OTP Code"}
+                      </Button>
+                    </>
+                  )}
+
+                  {resetStep === 'otp' && (
+                    <>
+                      <div className="text-sm text-gray-600 text-center">
+                        We've sent a 6-digit code to <strong>{resetEmail}</strong>
+                      </div>
+                      <Input
+                        type="text"
+                        placeholder="Enter 6-digit code"
+                        value={otpCode}
+                        onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        className="border-gray-200 focus:border-yellow-400 focus:ring-yellow-400 text-center text-2xl tracking-widest"
+                        maxLength={6}
+                      />
+                      <Button
+                        onClick={handleVerifyOTP}
+                        disabled={isLoading || otpCode.length !== 6}
+                        className="w-full bg-gradient-to-r from-yellow-400 to-yellow-500 text-white hover:from-yellow-500 hover:to-yellow-600"
+                      >
+                        {isLoading ? "Verifying..." : "Verify Code"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setResetStep('email')
+                          setOtpCode('')
+                          setError('')
+                        }}
+                        className="w-full text-gray-600 hover:text-gray-900 text-sm"
+                      >
+                        Resend Code
+                      </Button>
+                    </>
+                  )}
+
+                  {resetStep === 'password' && (
+                    <>
+                      <div className="text-sm text-gray-600 text-center">
+                        Enter your new password
+                      </div>
+                      <Input
+                        type="password"
+                        placeholder="New Password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="border-gray-200 focus:border-yellow-400 focus:ring-yellow-400"
+                      />
+                      <Input
+                        type="password"
+                        placeholder="Confirm New Password"
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        className="border-gray-200 focus:border-yellow-400 focus:ring-yellow-400"
+                      />
+                      <Button
+                        onClick={handleResetPassword}
+                        disabled={isLoading}
+                        className="w-full bg-gradient-to-r from-yellow-400 to-yellow-500 text-white hover:from-yellow-500 hover:to-yellow-600"
+                      >
+                        {isLoading ? "Resetting..." : "Reset Password"}
+                      </Button>
+                    </>
+                  )}
+                  
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setShowForgotPassword(false)
+                      setResetStep('email')
+                      setOtpCode('')
+                      setNewPassword('')
+                      setConfirmNewPassword('')
+                      setError('')
+                    }}
+                    className="w-full text-gray-600 hover:text-gray-900"
+                  >
+                    Back to Sign In
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : (
+            <Tabs defaultValue="auth" className="w-full">
             <TabsList className="grid w-full grid-cols-2 bg-gray-100">
               <TabsTrigger
                 value="auth"
@@ -228,6 +498,15 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
                 >
                   {isLoading ? "Signing In..." : "Sign In"}
                 </Button>
+              </div>
+
+              <div className="text-right">
+                <button
+                  onClick={() => setShowForgotPassword(true)}
+                  className="text-sm text-yellow-600 hover:text-yellow-700 hover:underline"
+                >
+                  Forgot password?
+                </button>
               </div>
 
               <div className="text-center">
@@ -320,6 +599,7 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
               </Button>
             </TabsContent>
           </Tabs>
+          )}
 
           <Button
             variant="ghost"

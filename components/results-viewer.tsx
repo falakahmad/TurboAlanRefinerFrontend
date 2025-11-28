@@ -76,7 +76,7 @@ export default function ResultsViewer() {
                 existing.passes = Math.max(existing.passes, event.pass || 0)
                 break
               case "pass_complete":
-                if (event.pass && (event.outputPath || (event as any).metrics?.localPath)) {
+                if (event.pass && (event.outputPath || (event as any).metrics?.localPath || (event as any).textContent)) {
                   existing.outputFiles.push({
                     passNumber: event.pass,
                     fileName: `${event.fileName}_pass${event.pass}.txt`,

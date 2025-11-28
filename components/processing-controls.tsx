@@ -15,8 +15,10 @@ import DownloadModal from "./download-modal"
 import ResumeModal from "./resume-modal"
 import { Download } from "lucide-react"
 import { formatFilePath } from "@/lib/path-utils"
+import { useToast } from "@/hooks/use-toast"
 
 export default function ProcessingControls() {
+  const { toast } = useToast()
   const { getUploadedFiles } = useFiles()
   const { processingEvents, addProcessingEvent, isProcessing, setIsProcessing, clearProcessingEvents } = useProcessing()
   const { schemaLevels, applyPreset } = useSchema()
@@ -26,6 +28,7 @@ export default function ProcessingControls() {
   const [completedFiles, setCompletedFiles] = useState<Array<{fileId: string; fileName: string; passes: {passNumber: number; path: string; size?: number; cost?: any}[]}>>([])
   const [totalJobCost, setTotalJobCost] = useState(0)
   const [currentPassCost, setCurrentPassCost] = useState(0)
+  const [tokenEstimate, setTokenEstimate] = useState<{tokens: number, cost: number} | null>(null)
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const stuckCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isProcessingRef = useRef(isProcessing)
@@ -227,6 +230,62 @@ export default function ProcessingControls() {
     } catch {}
   }, [processingEvents])
 
+  // Token Estimator Logic
+  useEffect(() => {
+    if (!selectedInputPath && getUploadedFiles().length === 0) {
+      setTokenEstimate(null)
+      return
+    }
+
+    const calculateEstimate = async () => {
+      // Simple approximation: 1 token ~= 4 chars (English)
+      // For code/technical text, it can be different, but this is a standard heuristic.
+      let totalChars = 0
+      
+      // Check uploaded files
+      const uploaded = getUploadedFiles()
+      for (const file of uploaded) {
+        // We might not have content for all, but let's try to estimate size
+        // Use file size if available
+        if (file.size) {
+          totalChars += file.size
+        } else {
+           // Fallback: assume average 2KB per page or just 0 if unknown
+           // Ideally we'd read the file size, but we don't have it easily here for all types.
+           // For now, if we can't read it, we skip or assume a default.
+           totalChars += 1000 // Placeholder for unknown files
+        }
+      }
+
+      // If selected local path (Desktop mode)
+      // We can't easily read the file content here without an API call.
+      // Let's rely on what we have. If we can't estimate, we show nothing or a warning.
+      
+      if (totalChars === 0) return
+
+      const inputTokens = Math.ceil(totalChars / 4)
+      const totalPasses = settings.passes
+      
+      // Rough multiplier for expansion/overhead + input + output per pass
+      // Input is sent every pass. Output is generated every pass.
+      // Cost = (Input + Output) * Passes
+      // Assuming Output ~= Input (refinement)
+      const estimatedTotalTokens = inputTokens * 2 * totalPasses
+      
+      // Cost estimation (using GPT-4 Turbo pricing as a baseline or generic)
+      // Input: $10/1M, Output: $30/1M -> Avg $20/1M
+      const costPer1k = 0.02 // $0.02 per 1k tokens (approx blended)
+      const estimatedCost = (estimatedTotalTokens / 1000) * costPer1k
+
+      setTokenEstimate({
+        tokens: estimatedTotalTokens,
+        cost: estimatedCost
+      })
+    }
+
+    calculateEstimate()
+  }, [selectedInputPath, getUploadedFiles, settings.passes])
+
   // Debug button re-rendering (disabled)
   useEffect(() => {
     
@@ -345,6 +404,10 @@ export default function ProcessingControls() {
             setIsProcessing(false)
             setPassProgress(new Map())
             window.dispatchEvent(new CustomEvent("refiner-processing-complete", { detail: event }))
+            toast({
+              title: "Processing Complete",
+              description: "All passes completed successfully!",
+            })
             return
           }
           
@@ -359,7 +422,11 @@ export default function ProcessingControls() {
               stuckCheckTimeoutRef.current = null
             }
             try { addProcessingEvent(event) } catch {}
-            alert(`Resume failed: ${event.error || event.message || "Unknown error"}`)
+            toast({
+              title: "Processing Failed",
+              description: event.error || event.message || "Unknown error",
+              variant: "destructive"
+            })
             setIsProcessing(false)
             setPassProgress(new Map())
             return
@@ -391,7 +458,7 @@ export default function ProcessingControls() {
           if (ev.type === "stage_update" && ev.pass) {
             setPassProgress(prev => {
               const newMap = new Map(prev)
-              const current = newMap.get(ev.pass) || { pass: ev.pass, status: "running" as const }
+              const current = newMap.get(ev.pass) || { pass: ev.pass, status: "running" as const, currentStage: ev.stage } as any
               current.currentStage = ev.stage
               current.status = "running"
               newMap.set(ev.pass, current)
@@ -405,7 +472,7 @@ export default function ProcessingControls() {
           if (ev.type === "pass_complete" && ev.pass) {
             setPassProgress(prev => {
               const newMap = new Map(prev)
-              const current = newMap.get(ev.pass) || { pass: ev.pass, status: "completed" as const }
+              const current = newMap.get(ev.pass) || { pass: ev.pass, status: "completed" as const, currentStage: "completed" } as any
               current.status = "completed"
               current.inputChars = ev.inputChars
               current.outputChars = ev.outputChars
@@ -451,7 +518,7 @@ export default function ProcessingControls() {
           if (ev.type === "progress" && ev.pass) {
             setPassProgress(prev => {
               const newMap = new Map(prev)
-              const current = newMap.get(ev.pass) || { pass: ev.pass, status: "running" as const }
+              const current = newMap.get(ev.pass) || { pass: ev.pass, status: "running" as const, currentStage: "processing" } as any
               if (ev.inputSize) current.inputChars = ev.inputSize
               if (ev.outputSize) current.outputChars = ev.outputSize
               newMap.set(ev.pass, current)
@@ -465,7 +532,11 @@ export default function ProcessingControls() {
       )
     } catch (error) {
       console.error("Resume failed:", error)
-      alert(`Resume failed: ${error instanceof Error ? error.message : "Unknown error"}`)
+      toast({
+        title: "Resume Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive"
+      })
       setIsProcessing(false)
     }
   }
@@ -480,6 +551,26 @@ export default function ProcessingControls() {
     setIsProcessing(true)
     setTotalJobCost(0)
     setCurrentPassCost(0)
+
+    // Check for large file/high cost
+    if (tokenEstimate && tokenEstimate.tokens > 50000) {
+      const confirmed = window.confirm(
+        `Large Job Alert:\n\nEstimated Tokens: ${tokenEstimate.tokens.toLocaleString()}\nEstimated Cost: ~$${tokenEstimate.cost.toFixed(2)}\n\nThis is a large job. Are you sure you want to proceed?`
+      )
+      if (!confirmed) {
+        setIsProcessing(false)
+        toast({
+          title: "Processing Cancelled",
+          description: "Large job cancelled by user",
+        })
+        return
+      }
+      toast({
+        title: "Large Job Warning",
+        description: `Processing ${tokenEstimate.tokens.toLocaleString()} tokens (~$${tokenEstimate.cost.toFixed(2)})`,
+        variant: "default"
+      })
+    }
     
     // Set a timeout fallback to prevent infinite processing state
     processingTimeoutRef.current = setTimeout(() => {
@@ -504,12 +595,17 @@ export default function ProcessingControls() {
             // Check if we have pass_complete events but no stream_end
             const passCompleteEvents = processingEventsRef.current.filter(e => e.type === "pass_complete")
             if (passCompleteEvents.length > 0) {
-              // If we have pass_complete events and it's been a while, assume completion
+              // If we have pass_complete events and it's been a while, check if all passes are done
               const lastPassEvent = passCompleteEvents[passCompleteEvents.length - 1]
-              if (lastPassEvent && lastPassEvent.pass && lastPassEvent.pass >= 3) {
+              // Only assume completion if the last pass matches or exceeds the configured number of passes
+              if (lastPassEvent && lastPassEvent.pass && lastPassEvent.pass >= settings.passes) {
                 setIsProcessing(false)
                 setPassProgress(new Map())
                 window.dispatchEvent(new CustomEvent("refiner-processing-complete", { detail: { type: "assumed_complete", lastPass: lastPassEvent } }))
+                toast({
+                  title: "Processing Complete",
+                  description: `All ${settings.passes} passes completed successfully!`,
+                })
               }
             }
           }
@@ -688,7 +784,11 @@ export default function ProcessingControls() {
                 textContent: (lastPass as any).textContent || ""
               })
             } else {
-              alert(`Processing failed: ${event.error || event.message || "Unknown error"}`)
+              toast({
+                title: "Processing Failed",
+                description: event.error || event.message || "Unknown error",
+                variant: "destructive"
+              })
             }
             
             setIsProcessing(false)
@@ -729,6 +829,11 @@ export default function ProcessingControls() {
                 detail: { passProgress: Array.from(newMap.values()), totalPasses: settings.passes }
               }))
               return newMap
+            })
+            // Toast for pass start
+            toast({
+              title: `Pass ${ev.pass} of ${settings.passes}`,
+              description: "Processing started...",
             })
           }
           
@@ -886,10 +991,19 @@ export default function ProcessingControls() {
       {/* Processing Controls */}
       <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-card-foreground">Processing Controls</CardTitle>
-          <CardDescription className="text-muted-foreground">Configure refinement parameters</CardDescription>
+          <CardTitle className="flex items-center justify-between">
+            <span>Processing Configuration</span>
+            {tokenEstimate && (
+              <div className="text-sm font-normal bg-secondary/50 px-3 py-1 rounded-full border border-border">
+                <span className="text-muted-foreground mr-2">Est. Usage:</span>
+                <span className="font-medium text-foreground">{tokenEstimate.tokens.toLocaleString()} tokens</span>
+                <span className="mx-2 text-border">|</span>
+                <span className="font-medium text-green-600">~${tokenEstimate.cost.toFixed(2)}</span>
+              </div>
+            )}
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label className="text-card-foreground">Passes</Label>
