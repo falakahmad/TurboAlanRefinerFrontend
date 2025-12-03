@@ -256,15 +256,29 @@ export default function ProcessingControls() {
       // Check uploaded files
       const uploaded = getUploadedFiles()
       for (const file of uploaded) {
-        // We might not have content for all, but let's try to estimate size
-        // Use file size if available
+        // File size is in bytes, but we need to estimate text content
+        // For PDFs and binary files, actual text content is much smaller than file size
+        // Use a conservative estimate: assume 10% of file size is actual text for PDFs/binary
+        // For text files, use file size directly
         if (file.size) {
-          totalChars += file.size
+          const fileName = file.name?.toLowerCase() || ''
+          // Check if it's a text-based file
+          const isTextFile = fileName.endsWith('.txt') || 
+                           fileName.endsWith('.md') || 
+                           fileName.endsWith('.json') ||
+                           fileName.endsWith('.csv')
+          
+          if (isTextFile) {
+            // For text files, use size directly (assuming UTF-8, 1 byte per char for ASCII)
+            totalChars += file.size
+          } else {
+            // For PDFs, DOCX, etc., estimate text content as 10% of file size
+            // This is conservative - actual text extraction might be even less
+            totalChars += Math.floor(file.size * 0.1)
+          }
         } else {
-           // Fallback: assume average 2KB per page or just 0 if unknown
-           // Ideally we'd read the file size, but we don't have it easily here for all types.
-           // For now, if we can't read it, we skip or assume a default.
-           totalChars += 1000 // Placeholder for unknown files
+          // Fallback: assume small file if size unknown
+          totalChars += 5000 // Conservative estimate for unknown files
         }
       }
 
@@ -272,7 +286,10 @@ export default function ProcessingControls() {
       // We can't easily read the file content here without an API call.
       // Let's rely on what we have. If we can't estimate, we show nothing or a warning.
       
-      if (totalChars === 0) return
+      if (totalChars === 0) {
+        setTokenEstimate(null)
+        return
+      }
 
       const inputTokens = Math.ceil(totalChars / 4)
       const totalPasses = settings.passes
@@ -577,7 +594,9 @@ export default function ProcessingControls() {
     }
 
     // Check for large file/high cost
-    if (tokenEstimate && tokenEstimate.tokens > 50000) {
+    // Only show alert for truly large jobs: > 500k tokens or > $10 cost
+    // This prevents false positives for normal-sized files
+    if (tokenEstimate && (tokenEstimate.tokens > 500000 || tokenEstimate.cost > 10)) {
       setLargeJobModalOpen(true)
       return // Wait for user confirmation in modal
     }
