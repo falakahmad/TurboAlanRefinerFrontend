@@ -114,15 +114,15 @@ export async function GET(request: NextRequest) {
 
     const authData = await authResponse.json()
 
-    // Create redirect URL with token in hash (more secure than query param)
-    const redirectUrl = new URL('/auth/google/success', baseUrl)
-    redirectUrl.hash = `token=${encodeURIComponent(authData.token || '')}&user=${encodeURIComponent(JSON.stringify(authData.user || {}))}`
+    // Redirect directly to dashboard with token in hash for client-side processing
+    const redirectUrl = new URL('/dashboard', baseUrl)
+    redirectUrl.hash = `token=${encodeURIComponent(authData.token || '')}&user=${encodeURIComponent(JSON.stringify(authData.user || {}))}&google_auth=true`
 
     // Clear OAuth state cookie
     const response = NextResponse.redirect(redirectUrl.toString())
     response.cookies.delete('google_oauth_state')
 
-    // Also set auth cookie for middleware
+    // Set auth cookie for middleware and client-side access
     if (authData.token) {
       const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
       response.cookies.set('refiner_auth', authData.token, {

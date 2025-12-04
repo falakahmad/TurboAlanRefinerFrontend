@@ -163,38 +163,38 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
     setShowSignupModal(true)
   }
 
-  const handleForgotPassword = async () =>{
+  const handleForgotPassword = async () => {
     setError("")
     if (!resetEmail) {
       setError("Please enter your email")
       return
     }
 
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(resetEmail)) {
+      setError("Please enter a valid email address")
+      return
+    }
+
     setIsLoading(true)
     try {
-      console.log('Sending password reset request to:', 'http://localhost:8000/auth/request-password-reset')
-      console.log('Email:', resetEmail)
-      
-      // Call backend to request OTP
-      const response = await fetch('http://localhost:8000/auth/request-password-reset', {
+      const response = await fetch('/api/auth/request-password-reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: resetEmail })
       })
 
-      console.log('Response status:', response.status)
       const data = await response.json()
-      console.log('Response data:', data)
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Failed to send OTP')
+        throw new Error(data.error || 'Failed to send OTP')
       }
 
       setResetStep('otp')
       setError('')
     } catch (err) {
-      console.error('Password reset error:', err)
-      setError(err instanceof Error ? err.message : "Failed to send OTP. Please check the console for details.")
+      setError(err instanceof Error ? err.message : "Failed to send OTP. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -209,7 +209,7 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
 
     setIsLoading(true)
     try {
-      const response = await fetch('http://localhost:8000/auth/verify-otp', {
+      const response = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: resetEmail, otp: otpCode })
@@ -218,7 +218,7 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Invalid OTP')
+        throw new Error(data.error || 'Invalid OTP')
       }
 
       setTempToken(data.temp_token)
@@ -233,34 +233,43 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
 
   const handleResetPassword = async () => {
     setError("")
+    
+    // Validation
+    if (!tempToken) {
+      setError("Session expired. Please start over.")
+      return
+    }
+    
     if (newPassword !== confirmNewPassword) {
       setError("Passwords do not match")
       return
     }
-    if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters")
+    
+    if (newPassword.length < 8) {
+      setError("Password must be at least 8 characters long")
       return
     }
 
     setIsLoading(true)
     try {
-      const response = await fetch('http://localhost:8000/auth/reset-password', {
+      const response = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           email: resetEmail, 
           token: tempToken,
-          new_password: newPassword 
+          newPassword: newPassword 
         })
       })
 
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Failed to reset password')
+        throw new Error(data.error || 'Failed to reset password')
       }
 
       setResetSent(true)
+      setError('')
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reset password")
     } finally {
@@ -303,8 +312,10 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
                       setResetSent(false)
                       setResetStep('email')
                       setOtpCode('')
+                      setTempToken('')
                       setNewPassword('')
                       setConfirmNewPassword('')
+                      setResetEmail('')
                     }}
                     className="text-gray-600"
                   >
@@ -326,6 +337,11 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
                         placeholder="Enter your email"
                         value={resetEmail}
                         onChange={(e) => setResetEmail(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !isLoading) {
+                            handleForgotPassword()
+                          }
+                        }}
                         className="border-gray-200 focus:border-yellow-400 focus:ring-yellow-400"
                       />
                       <Button
@@ -342,6 +358,11 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
                     <>
                       <div className="text-sm text-gray-600 text-center">
                         We've sent a 6-digit code to <strong>{resetEmail}</strong>
+                        {process.env.NODE_ENV === 'development' && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            (Check console for OTP in development mode)
+                          </div>
+                        )}
                       </div>
                       <Input
                         type="text"
@@ -350,6 +371,11 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
                         onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                         className="border-gray-200 focus:border-yellow-400 focus:ring-yellow-400 text-center text-2xl tracking-widest"
                         maxLength={6}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !isLoading && otpCode.length === 6) {
+                            handleVerifyOTP()
+                          }
+                        }}
                       />
                       <Button
                         onClick={handleVerifyOTP}
@@ -407,8 +433,10 @@ export default function AuthModal({ isOpen, onClose, onAuthenticated }: AuthModa
                       setShowForgotPassword(false)
                       setResetStep('email')
                       setOtpCode('')
+                      setTempToken('')
                       setNewPassword('')
                       setConfirmNewPassword('')
+                      setResetEmail('')
                       setError('')
                     }}
                     className="w-full text-gray-600 hover:text-gray-900"

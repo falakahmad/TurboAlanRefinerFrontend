@@ -16,36 +16,49 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
 
+  // Check for token and email in URL on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const token = urlParams.get('token')
+    const email = urlParams.get('email')
+    
+    if (!token || !email) {
+      setError("Invalid reset link. Please request a new password reset.")
+    }
+  }, [])
+
   const handleResetPassword = async () => {
     setError("")
     if (password !== confirmPassword) {
       setError("Passwords do not match")
       return
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters")
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long")
       return
     }
 
     setIsLoading(true)
     try {
-      // Get token from URL or localStorage
+      // Get token and email from URL parameters
       const urlParams = new URLSearchParams(window.location.search)
-      const token = urlParams.get('token') || localStorage.getItem('reset_token')
-      const email = urlParams.get('email') || localStorage.getItem('reset_email')
+      const token = urlParams.get('token')
+      const email = urlParams.get('email')
       
       if (!token || !email) {
-        throw new Error("Reset token or email missing. Please request a new password reset.")
+        setError("Reset token or email missing. Please use the link from your email or request a new password reset.")
+        setIsLoading(false)
+        return
       }
 
-      // Call backend API to reset password
+      // Call API to reset password
       const response = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email,
           token,
-          new_password: password
+          newPassword: password
         })
       })
 
@@ -56,12 +69,10 @@ export default function ResetPasswordPage() {
       }
 
       setSuccess(true)
-      // Clear reset token from localStorage
-      localStorage.removeItem('reset_token')
-      localStorage.removeItem('reset_email')
+      // Redirect to login page after successful reset
       setTimeout(() => {
-        router.push("/")
-      }, 3000)
+        router.push("/?login=1&message=Password reset successful. Please sign in with your new password.")
+      }, 2000)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reset password")
     } finally {
@@ -79,7 +90,9 @@ export default function ResetPasswordPage() {
                 <span className="text-white font-bold text-lg">T</span>
               </div>
               <CardTitle className="text-gray-900">Reset Password</CardTitle>
-              <CardDescription className="text-gray-600">Enter your new password below</CardDescription>
+              <CardDescription className="text-gray-600">
+                {success ? "Password updated successfully!" : "Enter your new password below"}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {success ? (
