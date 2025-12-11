@@ -138,7 +138,7 @@ async function insertSystemLog(logData: any) {
       timestamp: new Date().toISOString(),
       level: logData.level || 'info'
     })
-  } catch (error) {
+} catch (error) {
     console.error("Failed to insert system log:", error)
   }
 }
@@ -255,19 +255,19 @@ async function handleSignupWithMongoDB(data: SignupRequest) {
 
   // Create user in MongoDB
   const newUser = await createMongoUser({
-    email: email.toLowerCase(),
-    password_hash: hashedPassword,
-    first_name: firstName,
-    last_name: lastName,
-    settings: {
-      openai_api_key: settings.openaiApiKey || "",
-      openai_model: settings.openaiModel,
-      target_scanner_risk: settings.targetScannerRisk,
-      min_word_ratio: settings.minWordRatio,
-    },
-    role: 'user',
-    is_active: true
-  })
+      email: email.toLowerCase(),
+      password_hash: hashedPassword,
+      first_name: firstName,
+      last_name: lastName,
+      settings: {
+        openai_api_key: settings.openaiApiKey || "",
+        openai_model: settings.openaiModel,
+        target_scanner_risk: settings.targetScannerRisk,
+        min_word_ratio: settings.minWordRatio,
+      },
+      role: 'user',
+      is_active: true
+    })
 
   if (!newUser) {
     return NextResponse.json({ error: "Failed to create account" }, { status: 500 })
@@ -563,23 +563,46 @@ async function handleGoogleSigninWithMongoDB(data: GoogleSigninRequest) {
     // Create new user
     try {
       const newUser = await createMongoUser({
-        email: email.toLowerCase(),
-        first_name: firstName || '',
-        last_name: lastName || '',
-        password_hash: '', // No password for Google OAuth users
-        is_active: true,
-        role: 'user',
-        settings: {},
+      email: email.toLowerCase(),
+      first_name: firstName || '',
+      last_name: lastName || '',
+      password_hash: '', // No password for Google OAuth users
+      is_active: true,
+      role: 'user',
+      settings: {},
         google_id: googleId || null,
         avatar_url: avatarUrl || null
       })
       
-      if (!user) {
-        return NextResponse.json({ error: "Failed to create user account" }, { status: 500 })
+      if (newUser) {
+        user = newUser
       }
     } catch (error) {
-      console.error("Failed to create user:", error)
-      return NextResponse.json({ error: "Failed to create user account" }, { status: 500 })
+      console.error("Failed to create user in MongoDB (continuing with temporary user):", error)
+      // MongoDB failed, but allow auth to proceed with temporary user object
+      // This ensures users can sign in even if DB is temporarily unavailable
+      const userId = crypto.randomUUID()
+      const now = new Date().toISOString()
+      user = {
+        id: userId,
+        email: email.toLowerCase(),
+        first_name: firstName || '',
+        last_name: lastName || '',
+        password_hash: '',
+        is_active: true,
+        role: 'user',
+        settings: {
+          openai_api_key: '',
+          openai_model: 'gpt-4',
+          target_scanner_risk: 15,
+          min_word_ratio: 0.8
+        },
+        google_id: googleId || null,
+        avatar_url: avatarUrl || null,
+        created_at: now,
+        last_login_at: null
+      }
+      console.warn("Created temporary user object due to MongoDB failure. User will need to sign in again after DB is restored.")
     }
   } else {
     // Update existing user - always update Google ID and avatar if provided
@@ -596,7 +619,7 @@ async function handleGoogleSigninWithMongoDB(data: GoogleSigninRequest) {
     if (avatarUrl) {
       updateData.avatar_url = avatarUrl
     }
-    
+
     // Also update name if provided and different
     if (firstName && firstName !== user.first_name) {
       updateData.first_name = firstName
@@ -720,26 +743,26 @@ export async function GET(request: NextRequest) {
 
     // Use MongoDB authentication
     const user = await getMongoUser(decoded.email)
-    
+
     if (!user || !user.is_active) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
-    }
+        return NextResponse.json({ error: "User not found" }, { status: 404 })
+      }
 
-    // Return user data (without password)
-    const userResponse = {
-      id: user.id,
-      email: user.email,
-      firstName: user.first_name,
-      lastName: user.last_name,
+      // Return user data (without password)
+      const userResponse = {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
       avatarUrl: user.avatar_url || undefined,
-      settings: user.settings,
-      createdAt: user.created_at,
-      lastLoginAt: user.last_login_at,
-      role: user.role,
-      isActive: user.is_active
-    }
+        settings: user.settings,
+        createdAt: user.created_at,
+        lastLoginAt: user.last_login_at,
+        role: user.role,
+        isActive: user.is_active
+      }
 
-    return NextResponse.json({ user: userResponse })
+      return NextResponse.json({ user: userResponse })
 
   } catch (error) {
     console.error("Get user error:", error)

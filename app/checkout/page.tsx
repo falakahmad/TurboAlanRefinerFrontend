@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { getPriceIdAsync, initializePriceIds } from "@/lib/stripe-config"
+import { getPriceIdAsync, initializePriceIds, isStripeAvailable, getStripeMessage } from "@/lib/stripe-config"
 
 export default function CheckoutPage() {
   const [plan, setPlan] = useState<string>("Pro")
@@ -15,8 +15,16 @@ export default function CheckoutPage() {
     const p = new URLSearchParams(window.location.search).get('plan')
     if (p) setPlan(p)
     
-    // Initialize price IDs on mount
-    initializePriceIds().finally(() => {
+    // Initialize price IDs on mount with timeout
+    const initPromise = Promise.race([
+      initializePriceIds(),
+      new Promise<void>((resolve) => setTimeout(() => resolve(), 5000)) // 5 second timeout
+    ])
+    
+    initPromise.finally(() => {
+      setInitializing(false)
+    }).catch((error) => {
+      console.error('Failed to initialize price IDs:', error)
       setInitializing(false)
     })
   }, [])
@@ -29,6 +37,15 @@ export default function CheckoutPage() {
     
     try {
       setLoading(true)
+      
+      // Check if Stripe is available
+      if (!isStripeAvailable()) {
+        const message = getStripeMessage() || 'Stripe payment processing is not currently available. Please install the stripe module and configure STRIPE_SECRET_KEY.'
+        alert(message)
+        setLoading(false)
+        return
+      }
+      
       // Get price ID from backend (creates if doesn't exist)
       const priceId = await getPriceIdAsync(plan)
       

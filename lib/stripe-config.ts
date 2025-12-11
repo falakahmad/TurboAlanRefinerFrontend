@@ -27,15 +27,36 @@ async function fetchPriceIds(): Promise<Record<string, string>> {
   // Fetch from backend
   fetchPromise = (async () => {
     try {
-      // Try frontend API route first (proxies to backend)
+      // Try frontend API route first (proxies to backend) with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const response = await fetch('/api/stripe/prices', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
+        // Even if response is not ok, try to parse it for error details
+        try {
+          const errorData = await response.json();
+          if (errorData.stripe_available === false) {
+            // Stripe not available, but return empty price IDs
+            cachedPriceIds = {
+              Starter: "",
+              Pro: "",
+              Enterprise: "",
+            };
+            (cachedPriceIds as any).__stripe_unavailable = true;
+            (cachedPriceIds as any).__stripe_message = errorData.message || "Stripe is not configured";
+            return cachedPriceIds;
+          }
+        } catch {}
         throw new Error('Failed to fetch price IDs from backend');
       }
 
@@ -47,18 +68,31 @@ async function fetchPriceIds(): Promise<Record<string, string>> {
           Pro: data.price_ids.Pro || "",
           Enterprise: data.price_ids.Enterprise || "",
         };
+        
+        // Store stripe availability status
+        if (data.stripe_available === false) {
+          (cachedPriceIds as any).__stripe_unavailable = true;
+          (cachedPriceIds as any).__stripe_message = data.message || "Stripe is not configured";
+        }
+        
         return cachedPriceIds;
       }
 
       throw new Error('Invalid response from backend');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching price IDs:', error);
-      // Return fallback values
-      return {
+      // Return fallback values even on error
+      const fallback = {
         Starter: "",
         Pro: "",
         Enterprise: "",
       };
+      // If it's an abort (timeout), mark as unavailable
+      if (error?.name === 'AbortError') {
+        (fallback as any).__stripe_unavailable = true;
+        (fallback as any).__stripe_message = "Request timed out. Stripe may not be configured.";
+      }
+      return fallback;
     } finally {
       fetchPromise = null;
     }
@@ -109,6 +143,22 @@ export async function getPriceIdAsync(planName: string): Promise<string> {
   const priceIds = await fetchPriceIds();
   const normalizedPlan = planName.charAt(0).toUpperCase() + planName.slice(1).toLowerCase();
   return priceIds[normalizedPlan] || priceIds.Pro || "";
+}
+
+/**
+ * Check if Stripe is available
+ */
+export function isStripeAvailable(): boolean {
+  if (!cachedPriceIds) return false;
+  return !(cachedPriceIds as any).__stripe_unavailable;
+}
+
+/**
+ * Get Stripe availability message
+ */
+export function getStripeMessage(): string | null {
+  if (!cachedPriceIds) return null;
+  return (cachedPriceIds as any).__stripe_message || null;
 }
 
 /**
