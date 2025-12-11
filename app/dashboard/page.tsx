@@ -17,7 +17,8 @@ export default function DashboardRoute() {
 
   // Handle Google OAuth callback from hash
   useEffect(() => {
-    if (!isInitialized || isProcessingGoogleAuth) return
+    if (!isInitialized) return
+    if (isProcessingGoogleAuth) return
 
     const handleGoogleAuth = async () => {
       try {
@@ -45,13 +46,19 @@ export default function DashboardRoute() {
                 avatarUrl: user.avatarUrl || user.avatar_url || undefined,
               }
               
+              // Sign in the user
               signin(normalizedUser, token)
               
-              // Clear hash from URL
+              // Clear hash from URL immediately
               window.history.replaceState({}, '', '/dashboard')
               
-              // Small delay to ensure state updates
-              await new Promise(resolve => setTimeout(resolve, 300))
+              // Small delay to ensure state updates propagate
+              await new Promise(resolve => setTimeout(resolve, 100))
+              
+              // Force a re-render by checking authentication state
+              // The RequireAuth component will handle the rest
+            } else {
+              console.error('Invalid user data: missing id or email')
             }
           } catch (parseError) {
             console.error('Error parsing Google auth data:', parseError)
@@ -65,8 +72,11 @@ export default function DashboardRoute() {
       }
     }
 
-    handleGoogleAuth()
-  }, [isInitialized, isProcessingGoogleAuth, signin])
+    // Only process if we have a hash
+    if (window.location.hash) {
+      handleGoogleAuth()
+    }
+  }, [isInitialized, signin])
 
   // Wait for auth to initialize before checking
   if (!isInitialized || isProcessingGoogleAuth) {

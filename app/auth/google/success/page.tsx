@@ -21,8 +21,9 @@ export default function GoogleAuthSuccessPage() {
         const params = new URLSearchParams(hash)
         const token = params.get('token')
         const userStr = params.get('user')
+        const isGoogleAuth = params.get('google_auth') === 'true'
 
-        if (token && userStr) {
+        if (token && userStr && isGoogleAuth) {
           try {
             const decodedUserStr = decodeURIComponent(userStr)
             const user = JSON.parse(decodedUserStr)

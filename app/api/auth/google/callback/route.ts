@@ -114,12 +114,12 @@ export async function GET(request: NextRequest) {
 
     const authData = await authResponse.json()
 
-    // Redirect directly to dashboard with token in hash for client-side processing
-    const redirectUrl = new URL('/dashboard', baseUrl)
-    redirectUrl.hash = `token=${encodeURIComponent(authData.token || '')}&user=${encodeURIComponent(JSON.stringify(authData.user || {}))}&google_auth=true`
+    // Redirect to success page with token and user data in hash for client-side processing
+    // The success page will handle authentication and redirect to dashboard
+    const redirectUrl = `${baseUrl}/auth/google/success#token=${encodeURIComponent(authData.token || '')}&user=${encodeURIComponent(JSON.stringify(authData.user || {}))}&google_auth=true`
 
     // Clear OAuth state cookie
-    const response = NextResponse.redirect(redirectUrl.toString())
+    const response = NextResponse.redirect(redirectUrl, { status: 302 })
     response.cookies.delete('google_oauth_state')
 
     // Set auth cookie for middleware and client-side access
