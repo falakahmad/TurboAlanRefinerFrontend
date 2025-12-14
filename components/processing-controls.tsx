@@ -220,16 +220,23 @@ export default function ProcessingControls() {
   // Rebuild completedFiles from processingEvents as a reliable fallback
   useEffect(() => {
     try {
-      const byFile: Record<string, { fileId: string; fileName: string; passes: { passNumber: number; path: string; size?: number; cost?: any }[] }> = {}
+      const byFile: Record<string, { fileId: string; fileName: string; passes: { passNumber: number; path: string; size?: number; cost?: any; textContent?: string }[] }> = {}
       for (const ev of processingEvents) {
         const anyEv: any = ev as any
-        if (anyEv.type === 'pass_complete' && (anyEv.outputPath || anyEv.metrics?.localPath) && anyEv.pass) {
+        if (anyEv.type === 'pass_complete' && (anyEv.outputPath || anyEv.metrics?.localPath || anyEv.textContent) && anyEv.pass) {
           const fid = anyEv.fileId || 'unknown'
           const fname = anyEv.fileName || `File ${fid}`
           const path = anyEv.outputPath || anyEv.metrics?.localPath
+          const textContent = anyEv.textContent // CRITICAL: Store textContent for reliable downloads on Vercel
           byFile[fid] = byFile[fid] || { fileId: fid, fileName: fname, passes: [] }
           if (!byFile[fid].passes.find(p => p.passNumber === anyEv.pass)) {
-            byFile[fid].passes.push({ passNumber: anyEv.pass, path, size: anyEv.outputChars, cost: anyEv.cost })
+            byFile[fid].passes.push({ 
+              passNumber: anyEv.pass, 
+              path: path || '', 
+              size: anyEv.outputChars, 
+              cost: anyEv.cost,
+              textContent: textContent // Store textContent for client-side download
+            })
           }
         }
       }
