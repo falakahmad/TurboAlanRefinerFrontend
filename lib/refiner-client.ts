@@ -233,17 +233,23 @@ export class RefinerClient {
                 try {
                   const backend = process.env.NEXT_PUBLIC_REFINER_BACKEND_WS_URL || (this.baseUrl ? this.baseUrl : "")
                   if (backend) {
-                    // Detect if page is HTTPS and force secure WebSocket
+                    // Detect if page is HTTPS or if we're in production (Vercel)
                     const isSecure = typeof window !== "undefined" && window.location.protocol === "https:"
+                    const isProduction = process.env.NODE_ENV === "production" || 
+                                         (typeof window !== "undefined" && window.location.hostname.includes("vercel.app"))
                     
                     // Convert http:// to ws:// and https:// to wss://
-                    // If page is HTTPS, always use wss:// regardless of backend URL protocol
+                    // CRITICAL FIX: In production or HTTPS, always use wss:// for CSP compliance
                     let wsBase = backend.replace(/\/$/, "")
-                    if (isSecure) {
-                      // Force secure WebSocket for HTTPS pages
+                    if (isSecure || isProduction) {
+                      // Force secure WebSocket for HTTPS pages and production
                       wsBase = wsBase.replace(/^https?:\/\//, "wss://")
+                      // If no protocol was present, add wss://
+                      if (!wsBase.startsWith("wss://") && !wsBase.startsWith("ws://")) {
+                        wsBase = `wss://${wsBase}`
+                      }
                     } else {
-                      // Use protocol from backend URL for HTTP pages
+                      // Use protocol from backend URL for HTTP pages (development only)
                       wsBase = wsBase
                         .replace(/^https:\/\//, "wss://")
                         .replace(/^http:\/\//, "ws://")
