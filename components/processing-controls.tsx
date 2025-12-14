@@ -681,13 +681,15 @@ export default function ProcessingControls() {
           driveId: driveId || (uploadedFile as any)?.driveId || undefined
         }]
       } else {
+        // CRITICAL FIX: Use the original file.id for consistency with backend upload registry
+        // The backend stores files by the file_id used during upload, so we must use the same ID
         files = getUploadedFiles().map(file => ({
-          id: (file as any).driveId || file.id,
+          id: file.id,  // Always use the original file.id from upload
           name: file.name,
           // Narrow to allowed union for API contract
           type: (file.type === 'drive' ? 'drive' : 'local') as 'local' | 'drive',
           source: file.source,
-          driveId: (file as any).driveId
+          driveId: (file as any).driveId  // Include driveId for reference, but use file.id as primary identifier
         }))
       }
       
