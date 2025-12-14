@@ -46,6 +46,7 @@ export default function ProcessingControls() {
   const processingEventsRef = useRef(processingEvents)
   const aggressivenessInitializedRef = useRef(false)
   const lastAppliedAggressivenessRef = useRef<string | null>(null)
+  const currentJobIdRef = useRef<string | null>(null) // Track current job to prevent mixing events
   const [settings, setSettings] = useState({
     passes: 3,
     aggressiveness: "auto",
@@ -73,10 +74,15 @@ export default function ProcessingControls() {
     if (savedSettings) {
       try {
         const parsedSettings = JSON.parse(savedSettings)
-        // Ensure numeric values are valid numbers
+        // FIX #4: Validate passes with stricter checks to prevent invalid values
         const validatedSettings = {
           ...parsedSettings,
-          passes: typeof parsedSettings.passes === 'number' && !isNaN(parsedSettings.passes) ? parsedSettings.passes : 3,
+          passes: typeof parsedSettings.passes === 'number' && 
+                  !isNaN(parsedSettings.passes) && 
+                  parsedSettings.passes > 0 && 
+                  parsedSettings.passes <= 10 
+            ? parsedSettings.passes 
+            : 3, // Default to 3 if invalid
           scannerRisk: typeof parsedSettings.scannerRisk === 'number' && !isNaN(parsedSettings.scannerRisk) ? parsedSettings.scannerRisk : 15,
           refinerStrength: typeof parsedSettings.refinerStrength === 'number' && !isNaN(parsedSettings.refinerStrength) ? parsedSettings.refinerStrength : 2,
           entropy: {
@@ -88,6 +94,8 @@ export default function ProcessingControls() {
         setSettings(prev => ({ ...prev, ...validatedSettings }))
       } catch (error) {
         console.error('Failed to load processing settings:', error)
+        // Reset to defaults on error
+        setSettings(prev => ({ ...prev, passes: 3 }))
       }
     }
     
@@ -105,9 +113,13 @@ export default function ProcessingControls() {
   }, [])
 
 
-  // Save settings to localStorage whenever settings change
+  // FIX #5: Persist settings whenever they change (with error handling)
   useEffect(() => {
-    localStorage.setItem('refiner-processing-settings', JSON.stringify(settings))
+    try {
+      localStorage.setItem('refiner-processing-settings', JSON.stringify(settings))
+    } catch (error) {
+      console.error('Failed to save processing settings:', error)
+    }
   }, [settings])
 
   // Sync aggressiveness with schema controls
@@ -220,8 +232,21 @@ export default function ProcessingControls() {
   // Rebuild completedFiles from processingEvents as a reliable fallback
   useEffect(() => {
     try {
+      // FIX #2: Only process events from the current job to prevent pollution from previous jobs
+      // Use the tracked currentJobId if available, otherwise get from most recent event
+      const currentJobId = currentJobIdRef.current || 
+        (processingEvents.length > 0 ? processingEvents[processingEvents.length - 1]?.jobId : null)
+      
+      if (!currentJobId) {
+        setCompletedFiles([])
+        return
+      }
+      
+      // Filter events to only current job
+      const currentJobEvents = processingEvents.filter(ev => ev.jobId === currentJobId)
+      
       const byFile: Record<string, { fileId: string; fileName: string; passes: { passNumber: number; path: string; size?: number; cost?: any; textContent?: string }[] }> = {}
-      for (const ev of processingEvents) {
+      for (const ev of currentJobEvents) {
         const anyEv: any = ev as any
         if (anyEv.type === 'pass_complete' && (anyEv.outputPath || anyEv.metrics?.localPath || anyEv.textContent) && anyEv.pass) {
           const fid = anyEv.fileId || 'unknown'
@@ -438,6 +463,7 @@ export default function ProcessingControls() {
             try { addProcessingEvent(event) } catch {}
             setIsProcessing(false)
             setPassProgress(new Map())
+            currentJobIdRef.current = null // Clear job tracking on completion
             window.dispatchEvent(new CustomEvent("refiner-processing-complete", { detail: event }))
             toast({
               title: "Processing Complete",
@@ -613,6 +639,11 @@ export default function ProcessingControls() {
   }
 
   const startProcessingInternal = async () => {
+    // FIX #1: Clear all state from previous jobs to prevent overlap
+    setPassProgress(new Map())
+    setCompletedFiles([])
+    clearProcessingEvents() // Clear events from previous jobs
+    currentJobIdRef.current = null // Reset current job tracking
     setIsProcessing(true)
     setTotalJobCost(0)
     setCurrentPassCost(0)
@@ -635,21 +666,45 @@ export default function ProcessingControls() {
           if (lastEvent && (lastEvent.type === "stream_end" || lastEvent.type === "complete")) {
             setIsProcessing(false)
             setPassProgress(new Map())
+            currentJobIdRef.current = null // Clear job tracking on completion
             window.dispatchEvent(new CustomEvent("refiner-processing-complete", { detail: lastEvent }))
           } else {
-            // Check if we have pass_complete events but no stream_end
-            const passCompleteEvents = processingEventsRef.current.filter(e => e.type === "pass_complete")
+            // FIX #3: Check if all files have completed all passes (multi-file support)
+            // FIX #7: Only check events from current job
+            const currentJobId = currentJobIdRef.current
+            const passCompleteEvents = currentJobId
+              ? processingEventsRef.current.filter(e => e.type === "pass_complete" && e.jobId === currentJobId)
+              : processingEventsRef.current.filter(e => e.type === "pass_complete")
+            
             if (passCompleteEvents.length > 0) {
-              // If we have pass_complete events and it's been a while, check if all passes are done
-              const lastPassEvent = passCompleteEvents[passCompleteEvents.length - 1]
-              // Only assume completion if the last pass matches or exceeds the configured number of passes
-              if (lastPassEvent && lastPassEvent.pass && lastPassEvent.pass >= settings.passes) {
+              // Group by fileId and check if each file has completed all passes
+              const filePassMap = new Map<string, Set<number>>()
+              passCompleteEvents.forEach(ev => {
+                const fileId = ev.fileId || 'default'
+                if (!filePassMap.has(fileId)) {
+                  filePassMap.set(fileId, new Set())
+                }
+                if (ev.pass) {
+                  filePassMap.get(fileId)!.add(ev.pass)
+                }
+              })
+              
+              // Check if all files have completed all required passes
+              const allFilesComplete = Array.from(filePassMap.entries()).every(([fileId, completedPasses]) => {
+                const maxPass = completedPasses.size > 0 ? Math.max(...Array.from(completedPasses)) : 0
+                return completedPasses.size >= settings.passes && maxPass >= settings.passes
+              })
+              
+              if (allFilesComplete && filePassMap.size > 0) {
                 setIsProcessing(false)
                 setPassProgress(new Map())
-                window.dispatchEvent(new CustomEvent("refiner-processing-complete", { detail: { type: "assumed_complete", lastPass: lastPassEvent } }))
+                currentJobIdRef.current = null // Clear job tracking
+                window.dispatchEvent(new CustomEvent("refiner-processing-complete", { 
+                  detail: { type: "assumed_complete", files: Array.from(filePassMap.keys()) } 
+                }))
                 toast({
                   title: "Processing Complete",
-                  description: `All ${settings.passes} passes completed successfully!`,
+                  description: `All ${settings.passes} passes completed for ${filePassMap.size} file${filePassMap.size > 1 ? 's' : ''}!`,
                 })
               }
             }
@@ -876,6 +931,11 @@ export default function ProcessingControls() {
               try { (event as any).outputPath = (event as any).metrics.localPath } catch {}
             }
           }
+          // FIX #7: Capture jobId from first event to track current job
+          if (event.jobId && !currentJobIdRef.current) {
+            currentJobIdRef.current = event.jobId
+          }
+          
           addProcessingEvent(event)
           
           // Track pass progression
@@ -883,17 +943,27 @@ export default function ProcessingControls() {
           if (ev.type === "pass_start") {
             setPassProgress(prev => {
               const newMap = new Map(prev)
-              // Initialize all pending passes
-              for (let i = 1; i <= settings.passes; i++) {
-                if (!newMap.has(i)) {
-                  newMap.set(i, { pass: i, status: "pending" })
+              // FIX #6: Only initialize passes if settings.passes is valid and we don't have stale data
+              // This prevents overwriting passes from previous jobs or incorrect pass counts
+              const validPasses = typeof settings.passes === 'number' && settings.passes > 0 && settings.passes <= 10
+                ? settings.passes 
+                : 3
+              
+              // Only initialize if we're starting fresh or if the current pass is within expected range
+              if (newMap.size === 0 || (ev.pass && ev.pass <= validPasses)) {
+                for (let i = 1; i <= validPasses; i++) {
+                  if (!newMap.has(i)) {
+                    newMap.set(i, { pass: i, status: "pending" })
+                  }
                 }
               }
               // Mark current pass as running
-              newMap.set(ev.pass, { pass: ev.pass, status: "running", currentStage: "starting" })
+              if (ev.pass) {
+                newMap.set(ev.pass, { pass: ev.pass, status: "running", currentStage: "starting" })
+              }
               // Emit progress event
               window.dispatchEvent(new CustomEvent("refiner-pass-progress", { 
-                detail: { passProgress: Array.from(newMap.values()), totalPasses: settings.passes }
+                detail: { passProgress: Array.from(newMap.values()), totalPasses: validPasses }
               }))
               return newMap
             })
