@@ -66,14 +66,24 @@ export default function FileUploadSection() {
         formData.append('file', file)
         formData.append('file_id', fileId)
         
+        console.log(`[FileUpload] Uploading file: ${file.name} (${file.size} bytes)`)
+        
         // Upload file to backend
         const response = await fetch('/api/drive/upload', {
           method: 'POST',
           body: formData,
         })
         
-        if (response.ok) {
-          const result = await response.json()
+        // Always try to parse the response body for error details
+        let result: any = null
+        try {
+          result = await response.json()
+        } catch (jsonError) {
+          console.error(`[FileUpload] Failed to parse response JSON:`, jsonError)
+        }
+        
+        if (response.ok && result?.file_id) {
+          console.log(`[FileUpload] Upload successful: ${file.name} -> ${result.file_id}`)
           // Store actual path for backend, but display will be sanitized
           const actualPath = result.temp_path || result.file_path || file.name
           // CRITICAL FIX: Store the backend's file_id properly
@@ -93,15 +103,22 @@ export default function FileUploadSection() {
             displayName: formatFilePath(actualPath, file.name)
           })
         } else {
+          // Extract error message from response
+          const errorMsg = result?.error || result?.detail || result?.message || `Upload failed (${response.status})`
+          console.error(`[FileUpload] Upload failed for ${file.name}: ${errorMsg}`, result)
           updateFile(fileId, { 
-            uploadError: 'Upload failed',
-            uploaded: false 
+            uploadError: errorMsg,
+            uploaded: false,
+            status: "error"
           })
         }
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        console.error(`[FileUpload] Upload error for ${file.name}:`, error)
         updateFile(fileId, { 
-          uploadError: `Upload error: ${error}`,
-          uploaded: false 
+          uploadError: `Upload error: ${errorMsg}`,
+          uploaded: false,
+          status: "error"
         })
       } finally {
         setUploadingFiles(prev => {
