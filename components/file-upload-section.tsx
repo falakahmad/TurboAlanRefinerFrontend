@@ -25,7 +25,27 @@ export default function FileUploadSection() {
   const handleFileUpload = useCallback(async (uploadedFiles: FileList) => {
     const fileArray = Array.from(uploadedFiles)
     
+    // Supported file extensions and MIME types
+    const SUPPORTED_EXTENSIONS = ['.txt', '.docx', '.doc', '.pdf', '.md']
+    const SUPPORTED_MIME_TYPES = [
+      'text/plain',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/markdown'
+    ]
+    
     for (const file of fileArray) {
+      // Validate file type before processing
+      const fileExt = '.' + file.name.split('.').pop()?.toLowerCase()
+      const isValidExt = SUPPORTED_EXTENSIONS.includes(fileExt)
+      const isValidMime = SUPPORTED_MIME_TYPES.includes(file.type) || file.type === '' // Some browsers don't set MIME type
+      
+      if (!isValidExt && !isValidMime) {
+        alert(`Unsupported file type: ${file.name}. Supported formats: TXT, DOCX, DOC, PDF, MD`)
+        continue
+      }
+      
       const fileId = Math.random().toString(36).substr(2, 9)
       const newFile = {
         id: fileId,
@@ -56,13 +76,19 @@ export default function FileUploadSection() {
           const result = await response.json()
           // Store actual path for backend, but display will be sanitized
           const actualPath = result.temp_path || result.file_path || file.name
+          // CRITICAL FIX: Store the backend's file_id properly
+          // The backend generates its own file_id (like "file_12345_6789") and stores 
+          // file info under that key - we MUST use this ID when starting refinement
           updateFile(fileId, { 
             uploaded: true,
             status: "uploaded",
-            // Use backend identifiers to drive refine payload
+            // Backend's file_id - this is what we need to use for refinement
             driveId: result.file_id,
+            backendFileId: result.file_id,  // Explicit field for backend file_id
             // Backend returns temp_path; use that as source path
             source: actualPath,
+            // Store file type for extension preservation
+            fileType: result.file_type,
             // Store display name separately
             displayName: formatFilePath(actualPath, file.name)
           })
@@ -338,13 +364,13 @@ export default function FileUploadSection() {
                     browse files
                   </Label>
                 </div>
-                <p className="text-sm text-gray-500">Supports .txt, .docx files up to 10MB</p>
+                <p className="text-sm text-gray-500">Supports .txt, .docx, .doc, .pdf, .md files up to 10MB</p>
               </div>
               <Input
                 id="file-upload"
                 type="file"
                 multiple
-                accept=".txt,.docx"
+                accept=".txt,.docx,.doc,.pdf,.md,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown"
                 className="hidden"
                 onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
               />
