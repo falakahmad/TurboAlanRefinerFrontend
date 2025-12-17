@@ -64,14 +64,28 @@ export function useResultStore() {
           existing.status = "processing"
           break
         case "pass_complete":
-          if (event.pass && event.outputPath) {
+          // CRITICAL FIX: Process pass_complete if we have pass number AND (outputPath OR textContent)
+          // textContent may be available without outputPath (especially on Vercel)
+          if (event.pass && (event.outputPath || (event as any).textContent || (event as any).metrics?.localPath)) {
             const existingOutput = existing.outputFiles.find(o => o.passNumber === event.pass)
             if (!existingOutput) {
+              // CRITICAL FIX: Preserve original file extension instead of hardcoding .txt
+              const outputPath = event.outputPath || (event as any).metrics?.localPath || ''
+              const pathExt = outputPath.split('.').pop()?.toLowerCase()
+              const origExt = event.fileName?.split('.').pop()?.toLowerCase()
+              const fileExt = (pathExt && ['docx', 'doc', 'pdf', 'txt', 'md'].includes(pathExt)) 
+                ? `.${pathExt}` 
+                : (origExt && ['docx', 'doc', 'pdf', 'txt', 'md'].includes(origExt))
+                  ? `.${origExt}`
+                  : '.txt'
+              const baseFileName = event.fileName?.replace(/\.[^/.]+$/, '') || 'file'
+              
               existing.outputFiles.push({
                 passNumber: event.pass,
-                fileName: `${event.fileName}_pass${event.pass}.txt`,
-                path: event.outputPath,
+                fileName: `${baseFileName}_pass${event.pass}${fileExt}`,
+                path: outputPath,
                 driveId: (event as any).driveId,
+                textContent: (event as any).textContent, // Store textContent for download
               })
             }
           }
@@ -130,12 +144,25 @@ export function useResultStore() {
           riskReduction: job.riskReduction || 
                         (job.metrics?.scannerRisk ? (100 - job.metrics.scannerRisk) : 0),
           outputFiles: Array.isArray(job.outputFiles) 
-            ? job.outputFiles.map((o: any) => ({
-                passNumber: o.passNumber || o.pass || 0,
-                fileName: o.fileName || `${job.fileName}_pass${o.passNumber || o.pass || 0}.txt`,
-                path: o.path || o.localPath || o.outputPath || "",
-                driveId: o.driveId,
-              }))
+            ? job.outputFiles.map((o: any) => {
+                // CRITICAL FIX: Preserve original file extension
+                const outputPath = o.path || o.localPath || o.outputPath || ''
+                const pathExt = outputPath.split('.').pop()?.toLowerCase()
+                const origExt = job.fileName?.split('.').pop()?.toLowerCase()
+                const fileExt = (pathExt && ['docx', 'doc', 'pdf', 'txt', 'md'].includes(pathExt)) 
+                  ? `.${pathExt}` 
+                  : (origExt && ['docx', 'doc', 'pdf', 'txt', 'md'].includes(origExt))
+                    ? `.${origExt}`
+                    : '.txt'
+                const baseFileName = job.fileName?.replace(/\.[^/.]+$/, '') || 'file'
+                
+                return {
+                  passNumber: o.passNumber || o.pass || 0,
+                  fileName: o.fileName || `${baseFileName}_pass${o.passNumber || o.pass || 0}${fileExt}`,
+                  path: outputPath,
+                  driveId: o.driveId,
+                }
+              })
             : [],
           processingTime: job.processingTime || 0,
           finalMetrics: {
