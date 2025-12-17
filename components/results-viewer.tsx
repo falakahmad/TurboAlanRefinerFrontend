@@ -77,12 +77,27 @@ export default function ResultsViewer() {
                 break
               case "pass_complete":
                 if (event.pass && (event.outputPath || (event as any).metrics?.localPath || (event as any).textContent)) {
-                  existing.outputFiles.push({
-                    passNumber: event.pass,
-                    fileName: `${event.fileName}_pass${event.pass}.txt`,
-                    path: event.outputPath || (event as any).metrics?.localPath,
-                    textContent: (event as any).textContent
-                  })
+                  // CRITICAL FIX: Check for duplicate pass before adding
+                  const existingOutput = existing.outputFiles.find(o => o.passNumber === event.pass)
+                  if (!existingOutput) {
+                    // CRITICAL FIX: Preserve original file extension instead of hardcoding .txt
+                    const outputPath = event.outputPath || (event as any).metrics?.localPath || ''
+                    const pathExt = outputPath.split('.').pop()?.toLowerCase()
+                    const origExt = event.fileName?.split('.').pop()?.toLowerCase()
+                    const fileExt = (pathExt && ['docx', 'doc', 'pdf', 'txt', 'md'].includes(pathExt)) 
+                      ? `.${pathExt}` 
+                      : (origExt && ['docx', 'doc', 'pdf', 'txt', 'md'].includes(origExt))
+                        ? `.${origExt}`
+                        : '.txt'
+                    const baseFileName = event.fileName?.replace(/\.[^/.]+$/, '') || 'file'
+                    
+                    existing.outputFiles.push({
+                      passNumber: event.pass,
+                      fileName: `${baseFileName}_pass${event.pass}${fileExt}`,
+                      path: outputPath,
+                      textContent: (event as any).textContent
+                    })
+                  }
                 }
                 // Update metrics from pass completion
                 if (event.metrics) {
@@ -338,11 +353,16 @@ export default function ResultsViewer() {
         }
       } else if (textContent) {
         // Client-side download for text content (Vercel compatible)
+        // CRITICAL FIX: textContent is always plain text, so use .txt extension
+        // even if the original was .docx/.pdf - this avoids confusing users
+        // who might expect a Word doc to open in Word
         const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' })
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = fileName || 'download.txt'
+        // Use .txt extension since textContent is plain text
+        const baseFileName = fileName?.replace(/\.[^/.]+$/, '') || 'download'
+        a.download = `${baseFileName}.txt`
         a.style.display = 'none'
         document.body.appendChild(a)
         a.click()
