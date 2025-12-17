@@ -13,6 +13,7 @@ interface RefineRequest {
     type: "local" | "drive"
     source?: string
     driveId?: string
+    backendFileId?: string  // Backend's file_id from upload response
   }>
   output: {
     type: "local" | "drive"
