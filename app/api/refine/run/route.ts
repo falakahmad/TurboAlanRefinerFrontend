@@ -158,7 +158,23 @@ export async function POST(request: NextRequest) {
       }
       console.log("[API] /api/refine/run upstream status", { status: upstream.status, ok: upstream.ok })
       if (!upstream.ok || !upstream.body) {
-        return NextResponse.json({ error: "Backend refine failed" }, { status: upstream.status || 502 })
+        // Try to get error details from response
+        let errorDetails: any = { error: "Backend refine failed" }
+        try {
+          const errorText = await upstream.text()
+          if (errorText) {
+            try {
+              errorDetails = JSON.parse(errorText)
+            } catch {
+              errorDetails = { error: errorText.slice(0, 200) } // Truncate for safety
+            }
+          }
+        } catch (e) {
+          // If we can't read the error, use default
+        }
+        
+        console.error(`[API] /api/refine/run backend error ${upstream.status}:`, errorDetails)
+        return NextResponse.json(errorDetails, { status: upstream.status || 502 })
       }
       // Optional: write a system log that a refine run started
       try {
