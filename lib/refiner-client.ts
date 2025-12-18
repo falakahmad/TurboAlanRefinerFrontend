@@ -42,6 +42,8 @@ export interface RefineRequest {
     mode: "inline" | "sidecar"
     verbosity: "low" | "medium" | "high"
   }
+  // Preset profile (fast_cheap, balanced, max_quality, academic, creative)
+  preset?: string
 }
 
 export interface PassMetrics {
