@@ -800,17 +800,31 @@ export default function ProcessingControls() {
         const isDriveUrl = selectedInputPath.includes('drive.google.com') || selectedInputPath.includes('docs.google.com')
         
         // Find the file in uploadedFiles to get its name and type
-        const uploadedFile = getUploadedFiles().find(f => 
-          f.source === selectedInputPath || 
-          (f as any).driveId === driveId ||
-          f.name === selectedInputPath
-        )
+        // Try multiple matching strategies to find the uploaded file
+        const uploadedFile = getUploadedFiles().find(f => {
+          // Match by source path
+          if (f.source === selectedInputPath) return true
+          // Match by driveId
+          if (driveId && (f as any).driveId === driveId) return true
+          // Match by name
+          if (f.name === selectedInputPath) return true
+          // Match by backendFileId if source contains it
+          if ((f as any).backendFileId && selectedInputPath.includes((f as any).backendFileId)) return true
+          return false
+        })
         
         // CRITICAL FIX: Use backend's file_id (stored in driveId/backendFileId) for local uploads
         // For Google Drive files, the driveId from URL is the correct ID
+        // If we can't find the uploaded file, we MUST have a valid backend file_id or fail gracefully
+        const backendFileId = (uploadedFile as any)?.driveId || (uploadedFile as any)?.backendFileId
         const effectiveId = isDriveUrl 
-          ? (driveId || "selected_file")
-          : ((uploadedFile as any)?.driveId || (uploadedFile as any)?.backendFileId || uploadedFile?.id || driveId || "selected_file")
+          ? (driveId || backendFileId || "selected_file")
+          : (backendFileId || (uploadedFile as any)?.driveId || uploadedFile?.id || driveId || "selected_file")
+        
+        // If we don't have a valid backend file_id and it's not a drive URL, warn the user
+        if (!isDriveUrl && !backendFileId && !uploadedFile) {
+          console.warn(`[ProcessingControls] Selected file path "${selectedInputPath}" not found in uploaded files. This may cause the request to fail.`)
+        }
         
         files = [{
           id: effectiveId,
@@ -818,7 +832,7 @@ export default function ProcessingControls() {
           type: (isDriveUrl || driveId || uploadedFile?.type === 'drive') ? 'drive' as const : 'local' as const,
           source: selectedInputPath,
           driveId: driveId || (uploadedFile as any)?.driveId || undefined,
-          backendFileId: (uploadedFile as any)?.driveId || (uploadedFile as any)?.backendFileId
+          backendFileId: backendFileId || (uploadedFile as any)?.backendFileId || undefined
         }]
       } else {
         // CRITICAL FIX: Use the backend's file_id (stored in driveId) for local file uploads
