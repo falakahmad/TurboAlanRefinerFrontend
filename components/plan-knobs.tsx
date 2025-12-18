@@ -9,8 +9,6 @@ interface PassProgress {
   inputChars?: number
   outputChars?: number
   currentStage?: string
-  chunkProgress?: number  // 0-100 percentage of chunks completed
-  chunkMessage?: string   // e.g., "Chunk 3/8 ✓ (37%)"
 }
 
 interface PlanKnobsProps {
@@ -65,38 +63,15 @@ export default function PlanKnobs({ weights, entropy, formattingMode, passProgre
                 </div>
                 
                 {p.status === "running" && (
-                  <div className="space-y-2">
-                    <div className="text-xs text-foreground flex items-center gap-2">
-                      {p.inputChars !== undefined && (
-                        <span>Read {p.inputChars.toLocaleString()} characters</span>
-                      )}
-                      {totalPasses && p.pass < totalPasses && (
-                        <>
-                          <ArrowRight className="h-3 w-3 text-primary" />
-                          <span className="text-primary font-medium">Converging to Pass {p.pass + 1}</span>
-                        </>
-                      )}
-                    </div>
-                    
-                    {/* Chunk Progress Bar - shows when processing large documents in parallel */}
-                    {p.chunkProgress !== undefined && p.chunkProgress > 0 && (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Parallel Chunks</span>
-                          <span className="text-primary font-medium">{Math.round(p.chunkProgress)}%</span>
-                        </div>
-                        <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                          <div 
-                            className="bg-primary h-full transition-all duration-300 ease-out rounded-full"
-                            style={{ width: `${Math.min(100, p.chunkProgress)}%` }}
-                          />
-                        </div>
-                        {p.chunkMessage && (
-                          <div className="text-xs text-muted-foreground">
-                            {p.chunkMessage}
-                          </div>
-                        )}
-                      </div>
+                  <div className="text-xs text-foreground flex items-center gap-2">
+                    {p.inputChars !== undefined && (
+                      <span>Read {p.inputChars.toLocaleString()} characters</span>
+                    )}
+                    {totalPasses && p.pass < totalPasses && (
+                      <>
+                        <ArrowRight className="h-3 w-3 text-primary" />
+                        <span className="text-primary font-medium">Converging to Pass {p.pass + 1}</span>
+                      </>
                     )}
                   </div>
                 )}
