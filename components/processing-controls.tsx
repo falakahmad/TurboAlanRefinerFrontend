@@ -560,6 +560,24 @@ export default function ProcessingControls() {
             })
           }
           
+          // Handle chunk progress events for real-time feedback during large document processing
+          if (ev.type === "chunk_progress") {
+            setPassProgress(prev => {
+              const newMap = new Map(prev)
+              // Find the current active pass or use pass 1
+              const activePass = Array.from(newMap.entries()).find(([_, v]) => v.status === "running")?.[0] || 1
+              const current = newMap.get(activePass) || { pass: activePass, status: "running" as const, currentStage: "processing" } as any
+              current.chunkProgress = ev.progress  // Store chunk progress percentage
+              current.chunkMessage = ev.message     // Store chunk progress message
+              current.currentStage = `processing (${ev.message})`
+              newMap.set(activePass, current)
+              window.dispatchEvent(new CustomEvent("refiner-chunk-progress", { 
+                detail: { progress: ev.progress, message: ev.message, stage: ev.stage }
+              }))
+              return newMap
+            })
+          }
+          
           if (ev.type === "pass_complete" && ev.pass) {
             setPassProgress(prev => {
               const newMap = new Map(prev)
@@ -1031,6 +1049,24 @@ export default function ProcessingControls() {
               newMap.set(ev.pass, current)
               window.dispatchEvent(new CustomEvent("refiner-pass-progress", { 
                 detail: { passProgress: Array.from(newMap.values()), totalPasses: settings.passes }
+              }))
+              return newMap
+            })
+          }
+          
+          // Handle chunk progress events for real-time feedback during large document processing
+          if (ev.type === "chunk_progress") {
+            setPassProgress(prev => {
+              const newMap = new Map(prev)
+              // Find the current active pass or use pass 1
+              const activePass = Array.from(newMap.entries()).find(([_, v]) => v.status === "running")?.[0] || 1
+              const current = newMap.get(activePass) || { pass: activePass, status: "running" as const, currentStage: "processing" } as any
+              current.chunkProgress = ev.progress
+              current.chunkMessage = ev.message
+              current.currentStage = `processing (${ev.message})`
+              newMap.set(activePass, current)
+              window.dispatchEvent(new CustomEvent("refiner-chunk-progress", { 
+                detail: { progress: ev.progress, message: ev.message, stage: ev.stage }
               }))
               return newMap
             })
